@@ -1,0 +1,135 @@
+
+
+query GetAvailableTables {
+  getAvailableTables {
+    areaId
+    id
+    diners
+    tableNumber
+    reservations {
+      reservationTime
+    }
+  }
+}
+
+query GetTable($getTableId: String!) {
+  getTable(id: $getTableId) {
+    areaId
+    diners
+    id
+    position
+    reserved
+    specialRequests
+    tableNumber
+    updatedAt
+  }
+}
+
+query GetTables {
+  getTables {
+    areaId
+    createdAt
+    diners
+    id
+    position
+    reserved
+    specialRequests
+    tableNumber
+    updatedAt
+  }
+}
+
+query GetTableOrder($tableId: String!) {
+  getTableOrder(tableId: $tableId) {
+    cart
+    deliveryTime
+    discount
+    id
+    note
+    orderDate
+    orderNumber
+    paid
+    paymentToken
+    serviceFee
+    status
+    total
+    userName
+    userPhone
+  }
+}
+
+query GetTableReservations($date: String!, $tableId: String!) {
+  getTableReservations(date: $date, tableId: $tableId) {
+    reservationTime
+    numOfDiners
+    status
+    userEmail
+    createdBy
+    id
+    user {
+      profile {
+        name
+        phone
+      }
+    }
+  }
+}
+mutation AddTable($areaId: String!, $diners: Int!, $position: JSON!, $tableNumber: Int!) {
+  addTable(areaId: $areaId, diners: $diners, position: $position, tableNumber: $tableNumber) {
+    id
+    tableNumber
+  }
+}
+
+mutation DeleteTable($deleteTableId: String!) {
+  deleteTable(id: $deleteTableId) {
+    tableNumber
+  }
+}
+
+mutation EditTable($editTableId: String!, $areaId: String, $diners: Int, $position: JSON, $reserved: Boolean, $specialRequests: [String!], $tableNumber: Int) {
+  editTable(id: $editTableId, areaId: $areaId, diners: $diners, position: $position, reserved: $reserved, specialRequests: $specialRequests, tableNumber: $tableNumber) {
+    id
+    tableNumber
+  }
+}
+
+mutation AddOrderToTable($cart: JSON!, $orderNumber: String!, $serviceFee: Float!, $tableId: String!, $total: Float!, $userEmail: String!, $userName: String!, $discount: Float, $note: String, $paymentToken: String) {
+  addOrderToTable(cart: $cart, orderNumber: $orderNumber, serviceFee: $serviceFee, tableId: $tableId, total: $total, userEmail: $userEmail, userName: $userName, discount: $discount, note: $note, paymentToken: $paymentToken) {
+    cart
+    discount
+    note
+    orderNumber
+    paymentToken
+    total
+    userEmail
+    userName
+    id
+  }
+}
+
+
+
+mutation MovePositionTable($movePositionTableId: String!, $position: JSON!) {
+  movePositionTable(id: $movePositionTableId, position: $position) {
+    id
+  }
+}
+mutation UpdateManyTables($updates: [UpdateManyTablesInput!]!) {
+  updateManyTables(updates: $updates) {
+    id
+    tableNumber
+    position
+    areaId
+    reserved
+    diners
+    specialRequests
+  }
+}
+
+mutation ToggleTableReservation($toggleTableReservationId: String!, $reserved: Boolean!) {
+  toggleTableReservation(id: $toggleTableReservationId, reserved: $reserved) {
+    id
+    reserved
+  }
+}

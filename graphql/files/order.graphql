@@ -1,0 +1,81 @@
+query GetOrders($first: Int, $after: ID) {
+  getOrders(first: $first, after: $after) {
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+    edges {
+      cursor
+      node {
+        cart
+        deliveryAddress
+        deliveryFee
+        deliveryTime
+        discount
+        id
+        note
+        orderDate
+        orderNumber
+        paid
+        paymentToken
+        serviceFee
+        status
+        total
+        userEmail
+        userName
+        userPhone
+      }
+    }
+  }
+}
+
+mutation AddOrder(
+  $cart: JSON!
+  $deliveryAddress: String!
+  $deliveryFee: Float!
+  $orderNumber: String!
+  $serviceFee: Float!
+  $total: Float!
+  $userEmail: String!
+  $userName: String!
+  $userPhone: String!
+  $discount: Float
+  $note: String
+  $paymentToken: String
+) {
+  addOrder(
+    cart: $cart
+    deliveryAddress: $deliveryAddress
+    deliveryFee: $deliveryFee
+    orderNumber: $orderNumber
+    serviceFee: $serviceFee
+    total: $total
+    userEmail: $userEmail
+    userName: $userName
+    userPhone: $userPhone
+    discount: $discount
+    note: $note
+    paymentToken: $paymentToken
+  ) {
+    id
+  }
+}
+
+mutation EditOrderOnPayment(
+  $editOrderOnPaymentId: String!
+  $paymentToken: String
+) {
+  editOrderOnPayment(id: $editOrderOnPaymentId, paymentToken: $paymentToken) {
+    id
+  }
+}
+
+mutation EditOrder(
+  $editOrderId: String!
+  $status: OrderStatus!
+  $deliveryTime: DateTime
+) {
+  editOrder(id: $editOrderId, status: $status, deliveryTime: $deliveryTime) {
+    id
+  }
+}

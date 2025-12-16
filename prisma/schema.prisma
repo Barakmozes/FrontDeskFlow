@@ -1,0 +1,448 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator pothos {
+  provider = "prisma-pothos-types"
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+  DELIVERY
+  WAITER
+  CHEF
+  MANAGER
+}
+
+enum OrderStatus {
+  PREPARING
+  UNASSIGNED
+  COLLECTED
+  DELIVERED
+  PENDING
+  READY
+  SERVED
+  COMPLETED
+  CANCELLED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum NotificationStatus {
+  READ
+  UNREAD
+}
+
+enum WaitlistStatus {
+  WAITING
+  CALLED
+  SEATED
+  CANCELLED
+}
+
+// -----------------------------------------------------------------------------
+// Existing + Enhanced Models
+// -----------------------------------------------------------------------------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  // Relation
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  // Relation
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([userId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  role          Role      @default(USER)
+  profile       Profile?
+
+  // Old "order" array, preserved from old schema
+  order    Order[]
+  favorite Favorite?
+
+  // New relations
+  reservations        Reservation[]
+  notifications       Notification[]
+  waitlists           Waitlist[]
+  createdReservations Reservation[]  @relation("CreatorOfReservation")
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Profile {
+  id    String  @id @default(cuid())
+  phone String?
+  img   String?
+  name  String?
+  email String  @unique
+
+  // Relation
+  user User @relation(fields: [email], references: [email])
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model VerificationToken {
+  // Added an id and timestamps for consistency
+  id         String   @id @default(cuid())
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([identifier, token])
+}
+
+model Notification {
+  id        String               @id @default(cuid())
+  userEmail String
+  // Relate by user email (backward compatibility)
+  user      User                 @relation(fields: [userEmail], references: [email], onDelete: Cascade)
+  type      String
+  priority  NotificationPriority @default(NORMAL)
+  message   String
+  status    NotificationStatus   @default(UNREAD)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([userEmail])
+}
+
+model Restaurant {
+  id          String  @id @default(cuid())
+  name        String
+  address     String? @default("rmat hsron 14")
+  openTimes   Json[]
+  deliveryFee Float   @default(4)
+  serviceFee  Float   @default(3)
+  bannerImg   String?
+  rating      Float   @default(4.5)
+
+  // Relationship
+  areas Area[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Menu {
+  id           String   @id @default(cuid())
+  title        String
+  shortDescr   String
+  longDescr    String?
+  price        Float
+  sellingPrice Float?
+  image        String
+  prepType     String[]
+  onPromo      Boolean  @default(false)
+
+  // Old category string (backward compatibility)
+  category String
+
+  // New relation to Category
+  categoryId String?
+  Category   Category? @relation(fields: [categoryId], references: [id])
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([category])
+  @@index([categoryId])
+}
+
+model Category {
+  id    String @id @default(cuid())
+  title String @unique
+  desc  String
+  img   String
+
+  menus Menu[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  cart            Json[]
+  orderDate       DateTime    @default(now())
+  deliveryTime    DateTime?   @default(now())
+  userName        String
+  userEmail       String
+  user            User        @relation(fields: [userEmail], references: [email])
+  userPhone       String  @default("")
+  paymentToken    String?
+  paid            Boolean     @default(false)
+  delivery        Delivery?
+  deliveryAddress String  @default("")
+  deliveryFee     Float       @default(4)
+  serviceFee      Float       @default(3)
+  status          OrderStatus @default(PREPARING)
+  note            String?
+  discount        Float?
+  total           Float
+
+  // New fields
+  items        Json?     @default("[]")
+  preOrder     Boolean   @default(false)
+  pickupTime   DateTime?
+  specialNotes String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Relationship to Table
+  tableId String?
+  table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  // Indexes
+  @@index([userEmail])
+  @@index([tableId])
+}
+
+model Delivery {
+  id          String @id @default(cuid())
+  driverName  String
+  driverEmail String
+  driverPhone String
+
+  orderNum String @unique
+  order    Order  @relation(fields: [orderNum], references: [orderNumber])
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userEmail String   @unique
+  user      User     @relation(fields: [userEmail], references: [email])
+  menu      String[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([userEmail])
+}
+
+// -----------------------------------------------------------------------------
+// New Models / Logic
+// -----------------------------------------------------------------------------
+
+model Area {
+  id             String  @id @default(cuid())
+  name           String  @unique
+  description    String?
+  floorPlanImage String?
+
+  // Self-relation for hierarchy
+  parentId String?
+  parent   Area?   @relation("ParentToChildren", fields: [parentId], references: [id])
+  children Area[]  @relation("ParentToChildren")
+
+  // Relationship to Restaurant
+  restaurantId String?
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  // Additional relations
+  gridConfig GridConfig?
+  waitlists  Waitlist[]
+  tables     Table[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([parentId])
+  @@index([restaurantId])
+}
+
+model GridConfig {
+  id       String @id @default(cuid())
+  areaId   String @unique
+  area     Area   @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  gridSize Int    @default(20)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([areaId])
+}
+
+model Table {
+  id              String   @id @default(cuid())
+  tableNumber     Int      @unique
+  diners          Int
+  reserved        Boolean  @default(false)
+  specialRequests String[] @default([])
+  position        Json     @default("{ \"x\": 0, \"y\": 0 }")
+
+  areaId String
+  area   Area   @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  // multiple reservations
+  reservations Reservation[]
+  // orders associated with this table
+  orders       Order[]
+  // usage stats
+  usageStats   TableUsage?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([areaId])
+}
+
+model TableUsage {
+  id         String    @id @default(cuid())
+  tableId    String    @unique
+  table      Table     @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  usageCount Int       @default(0)
+  lastUsed   DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Reservation {
+  id        String @id @default(cuid())
+  // who made the reservation
+  userEmail String
+  user      User   @relation(fields: [userEmail], references: [email], onDelete: Cascade)
+
+  // which table
+  tableId String
+  table   Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  status          ReservationStatus @default(PENDING)
+  reservationTime DateTime
+  numOfDiners     Int
+
+  // Store the role of the user at creation
+  createdBy Role
+
+  // Optionally store which user created it, also by email
+  createdByUserEmail String?
+  createdByUser      User?   @relation("CreatorOfReservation", fields: [createdByUserEmail], references: [email])
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([status])
+  @@index([userEmail])
+  @@index([tableId])
+}
+
+model Waitlist {
+  id        String @id @default(cuid())
+  // user on the waitlist
+  userEmail String
+  user      User   @relation(fields: [userEmail], references: [email])
+
+  // which area
+  areaId String
+  area   Area   @relation(fields: [areaId], references: [id])
+
+  numOfDiners Int
+  status      WaitlistStatus @default(WAITING)
+
+  // Additional fields
+  calledAt DateTime?
+  seatedAt DateTime?
+  priority Int?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Indexes
+  @@index([userEmail])
+  @@index([areaId])
+}

@@ -1,0 +1,64 @@
+query GetArea($getAreaId: String!) {
+  getArea(id: $getAreaId) {
+    description
+    floorPlanImage
+    name
+    updatedAt
+    id
+    tables 
+    {
+      diners
+      tableNumber
+      position
+      reserved
+      specialRequests
+      id
+    }
+  }
+}
+
+query GetAreas {
+  getAreas {
+    updatedAt
+    name
+    id
+    floorPlanImage
+    description
+    tables {
+      diners
+      id
+      position
+      reserved
+      specialRequests
+      tableNumber
+    }
+  }
+}
+
+mutation AddArea($name: String!, $description: String) {
+  addArea(name: $name, description: $description) {
+    id
+  }
+}
+
+mutation DeleteArea($deleteAreaId: String!) {
+  deleteArea(id: $deleteAreaId) {
+    name
+    id
+  }
+}
+
+mutation EditArea($editAreaId: String!, $description: String, $floorPlanImage: String, $name: String) {
+  editArea(id: $editAreaId, description: $description, floorPlanImage: $floorPlanImage, name: $name) {
+    id
+  }
+}
+
+query GetAreasNameDescription($orderBy: AreaOrderByInput) {
+  getAreasNameDescription(orderBy: $orderBy) {
+    createdAt
+    floorPlanImage
+    id
+    name
+  }
+}
