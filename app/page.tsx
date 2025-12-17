@@ -22,14 +22,10 @@ export default async function Home() {
       {user?.role !== "WAITER" && user?.role !== "MANAGER" ? (
         <>
           <HeroSection />
-          <Promos />
         </>
       ) : (
         <ZoneRestaurant />
       )}
-  
-      <Categories />
-      <MenuSection user={user as User} />
       <Footer />
     </main>
   )

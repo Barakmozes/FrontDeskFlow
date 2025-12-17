@@ -44,7 +44,7 @@ const SideBar = ({ user }: Props) => {
             </div>
             <div className="flex items-center p-3 transition-all font-semibold">
               <Image
-                src={user?.image!}
+                src={"/img/avatar.png"}
                 width={40}
                 height={40}
                 alt="user-img"
@@ -86,7 +86,7 @@ const SideBar = ({ user }: Props) => {
            hover:bg-green-200  hover:text-green-700  p-3 rounded  focus:outline-none "
             onClick={showLoginComponent}
           >
-            Login / Signup
+            Login
           </button>
         )}
 

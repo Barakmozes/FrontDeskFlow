@@ -19,7 +19,7 @@ const Footer = () => {
       {/* Footer Large Screen */}
       <section className="hidden md:flex  justify-around items-center border-t border-slate-100 py-12 px-12 ">
         <div className="items-center">
-          <Image src="/img/logo.png" alt="logo" width={70} height={70} />
+          <Image src="/img/logo.png" alt="logo" width={70} height={70} className="rounded-full"/>
         </div>
 
         <div className=" flex flex-col space-y-2">

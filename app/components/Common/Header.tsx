@@ -75,7 +75,6 @@ const Header = ({ user }: HeaderProps) => {
         >
           <HiBars3 size={28} className="cursor-pointer shrink-0" />
         </button>
-        {!["WAITER", "MANAGER"].includes(user?.role) && <LocationBtn />}
       </div>
 
       {/* Center Area - Display Zones for Desktop */}
@@ -131,7 +130,7 @@ const Header = ({ user }: HeaderProps) => {
       )}
 
       {/* Right Area */}
-      <div className="hidden md:flex items-center justify-end space-x-4">
+      <div className="hidden md:flex items-center justify-end space-x-4 mx-auto">
         {/* Shopping Cart */}
         <Link
           href="/cart"
@@ -156,7 +155,7 @@ const Header = ({ user }: HeaderProps) => {
             onClick={onOpen}
             aria-label="Login or signup"
           >
-            Login/Signup
+            Login
           </button>
         )}
         {/* <FullscreenButton/>  אם ארצה מצב מסך מלא לחוויה של אפליקצה*/}

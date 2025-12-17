@@ -1,7 +1,7 @@
 import { HiArrowRightOnRectangle, HiChevronDoubleLeft } from "react-icons/hi2";
 import RenderRoutes from "./RenderRoutes";
 import { AdminRoutes } from "./routes";
-
+import Image from "next/image";
 type Props = {
   show: boolean;
   showSideBar: () => void;
@@ -26,6 +26,9 @@ const DashSideBar = ({ show, showSideBar }: Props) => {
         size={32}
         onClick={showSideBar}
       />
+         <div className="flex items-center gap-x-8 rounded-full ">
+                <Image src="/img/logo.png" alt="logo" width={70} height={70} />
+              </div>
       <nav className="flex flex-col items-center justify-between h-full   ">
         <div
           className={`overflow-y-auto pt-20 w-16 scrollbar-hide ${

@@ -31,7 +31,7 @@ export default function AccountDropDown({user}: AccountDropDownProps) {
         <div>
           <Menu.Button className="bg-slate-200 p-1  rounded-full text-gray-500 hover:bg-green-200 hover:text-green-600">
             <Image
-              src={user?.image!}
+               src={"/img/avatar.png"}
               alt="avatar"
               width={30}
               height={30}
@@ -58,7 +58,7 @@ export default function AccountDropDown({user}: AccountDropDownProps) {
               <Menu.Item>
                 <div className="flex items-center py-4 pl-3 rounded-md text-gray-500 transition-all  hover:bg-green-200 hover:text-green-600 ">
                   <Image
-                     src={user?.image!}
+                    src={"/img/avatar.png"}
                     alt="avatar"
                     width={30}
                     height={30}

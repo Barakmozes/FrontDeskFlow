@@ -61,14 +61,14 @@ export default function HeroSection() {
       {/* Carousel Container */}
       <div
         ref={sliderRef}
-        className="relative h-48 md:h-72 bg-no-repeat bg-cover w-full keen-slider "
+        className="relative h-48 md:h-72 bg-no-repeat bg-cover w-full keen-slider"
         role="region"
         aria-label="Hero carousel"
       >
         {slides.map((src, idx) => (
           <div
             key={idx}
-            className="keen-slider__slide relative w-full "
+            className="keen-slider__slide relative w-full"
           >
             <Image
               src={src}

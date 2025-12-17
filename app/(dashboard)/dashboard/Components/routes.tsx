@@ -18,6 +18,6 @@ export const AdminRoutes = [
     { title: "Orders", icon: CiReceipt, url: "/dashboard/orders" },
     { title: "Menu", icon: VscLayoutMenubar, url: "/dashboard/menu" },
     { title: "Notifications", icon: AiOutlineMessage, url: "/dashboard/notifications" },
-    { title: "Deliveries", icon: HiOutlineTruck, url: "/dashboard/deliveries" },
+    { title: "Room service", icon: HiOutlineTruck, url: "/dashboard/deliveries" },
     { title: "Settings", icon: HiOutlineCog6Tooth, url: "/dashboard/settings" },
   ];
