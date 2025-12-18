@@ -26,6 +26,8 @@ export default async function Home() {
       ) : (
         <ZoneRestaurant />
       )}
+            <Categories />
+      <MenuSection user={user as User} />
       <Footer />
     </main>
   )

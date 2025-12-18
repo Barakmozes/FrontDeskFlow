@@ -3,15 +3,13 @@
 import React, { useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useQuery } from "@urql/next";
-import { HiBars3, HiXMark } from "react-icons/hi2";
+import { HiBars3, HiXMark, HiOutlineShoppingCart } from "react-icons/hi2";
 
-import { useLoginModal, useSideBarDrawer } from "@/lib/store";
+import { useCartStore, useLoginModal, useSideBarDrawer } from "@/lib/store";
 import { useHotelStore } from "@/lib/AreaStore";
 import AccountDropDown from "./AccountDropDown";
 
-import {
-  GetAreasNameDescriptionDocument,
-} from "@/graphql/generated";
+import { GetAreasNameDescriptionDocument } from "@/graphql/generated";
 
 import type { User } from "@prisma/client";
 import type {
@@ -31,11 +29,26 @@ type HeaderProps = {
  * Header (Hotel mode)
  * - Hotels are backed by Areas in the DB
  * - Selecting a hotel sets `selectedHotel` in Zustand (useHotelStore)
- * - Fully client-side mapping, no backend changes required
+ * - Adds Cart icon + count (menus) from useCartStore
  */
 export default function Header({ user }: HeaderProps) {
   const { onOpen } = useLoginModal();
   const { onSideBarOpen } = useSideBarDrawer();
+
+  // ✅ Cart / menus
+  const { menus } = useCartStore();
+
+  useEffect(() => {
+    // If your cart store uses `skipHydration: true`, this ensures the badge count is correct on first load.
+    // (Matches how other components in the project handle it.)
+    useCartStore.persist.rehydrate();
+  }, []);
+
+  const cartCount = useMemo(() => {
+    if (!menus || menus.length === 0) return 0;
+    // Prefer total quantity (more accurate than menus.length)
+    return menus.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
+  }, [menus]);
 
   const hotels = useHotelStore((s) => s.hotels);
   const setHotels = useHotelStore((s) => s.setHotels);
@@ -73,7 +86,6 @@ export default function Header({ user }: HeaderProps) {
   const handleHotelSelect = useCallback(
     (hotelIdOrName: string) => {
       setSelectedHotel(hotelIdOrName);
-      // Optional UX: scroll header into view after selection (safe no-op if not needed)
       requestAnimationFrame(() => {
         document.getElementById("top_header")?.scrollIntoView({
           behavior: "smooth",
@@ -128,7 +140,7 @@ export default function Header({ user }: HeaderProps) {
             </div>
           </div>
 
-          {/* Right cluster: Clear + Account/Login */}
+          {/* Right cluster: Clear + Cart + Account/Login */}
           <div className="flex items-center gap-2">
             {selectedHotel ? (
               <button
@@ -142,6 +154,45 @@ export default function Header({ user }: HeaderProps) {
                 Clear
               </button>
             ) : null}
+
+            {/* ✅ Cart */}
+            {user ? (
+              <Link
+                href="/cart"
+                className="relative p-2 rounded-full bg-slate-200 text-gray-600 hover:bg-green-200 hover:text-green-700 transition"
+                aria-label={`View cart (${cartCount} items)`}
+                title="View cart"
+              >
+                <HiOutlineShoppingCart size={22} />
+                <span className="sr-only">{cartCount} items in cart</span>
+
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold bg-white text-green-700 border border-green-200 flex items-center justify-center"
+                >
+                  {cartCount}
+                </span>
+              </Link>
+            ) : (
+              // If not logged in, keep UX safe (cart page expects a user in your current codebase)
+              <button
+                type="button"
+                onClick={onOpen}
+                className="relative p-2 rounded-full bg-slate-200 text-gray-600 hover:bg-green-200 hover:text-green-700 transition"
+                aria-label={`Login to view cart (${cartCount} items)`}
+                title="Login to view cart"
+              >
+                <HiOutlineShoppingCart size={22} />
+                <span className="sr-only">{cartCount} items in cart</span>
+
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold bg-white text-green-700 border border-green-200 flex items-center justify-center"
+                >
+                  {cartCount}
+                </span>
+              </button>
+            )}
 
             {user ? (
               <AccountDropDown user={user} />
