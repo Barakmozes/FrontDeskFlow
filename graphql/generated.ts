@@ -844,7 +844,7 @@ export type Restaurant = {
   __typename?: 'Restaurant';
   address?: Maybe<Scalars['String']['output']>;
   areas: Array<Area>;
-  bannerImg: Scalars['String']['output'];
+  bannerImg?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   deliveryFee: Scalars['Float']['output'];
   id: Scalars['ID']['output'];

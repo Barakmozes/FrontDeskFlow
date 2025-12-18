@@ -1,7 +1,7 @@
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  // directUrl = env("DIRECT_URL")
 }
 generator client {
   provider = "prisma-client-js"
@@ -353,7 +353,7 @@ model GridConfig {
 
 model Table {
   id              String   @id @default(cuid())
-  tableNumber     Int      @unique
+  tableNumber     Int     
   diners          Int
   reserved        Boolean  @default(false)
   specialRequests String[] @default([])
@@ -375,6 +375,7 @@ model Table {
 
   // Indexes
   @@index([areaId])
+  @@unique([areaId, tableNumber])
 }
 
 model TableUsage {

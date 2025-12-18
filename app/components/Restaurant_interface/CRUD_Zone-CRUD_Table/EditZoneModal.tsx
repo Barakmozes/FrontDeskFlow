@@ -1,305 +1,207 @@
 "use client";
 
-import React, { useState } from "react";
-import { FaEdit } from "react-icons/fa";
-import Modal from "../../Common/Modal";
-import toast from "react-hot-toast";
+import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@urql/next";
+import toast from "react-hot-toast";
+
+import Modal from "../../Common/Modal";
 
 import {
-    Area,
-  GetAreasNameDescriptionDocument,
+  BasicArea,
   EditAreaDocument,
   EditAreaMutation,
   EditAreaMutationVariables,
+  GetAreasNameDescriptionDocument,
 } from "@/graphql/generated";
 
-// The SupabaseImageUpload function is assumed to be imported from your storage logic
-import { SupabaseImageUpload } from "@/lib/supabaseStorage";
-// The UploadImg component you mentioned
-import UploadImg from "../../../(dashboard)/dashboard/Components/UploadImg";
-import Image from "next/image";
+interface EditHotelModalProps {
+  areas: BasicArea[];
+  /** Optional pre-selected hotel */
+  areaSelectToEdit?: BasicArea | null;
+}
 
-type Props = {
-  /** All available areas, if you want to populate a dropdown */
-  areas: Area[];
-  /** An initial area to edit, if you already know which one is selected */
-  areaSelectToEdit?: Area;
-};
-
-const EditZoneModal = ({ areas, areaSelectToEdit }: Props) => {
+/**
+ * EditHotelModal
+ * Backend mapping: Area -> Hotel
+ *
+ * NOTE: We intentionally keep this modal aligned with BasicArea fields
+ * (id, name, floorPlanImage). Description can be added later with a fuller query.
+ */
+const EditHotelModal: React.FC<EditHotelModalProps> = ({
+  areas,
+  areaSelectToEdit,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  // 1) State for selecting which area we're editing
-  const [selectedAreaId, setSelectedAreaId] = useState<string>("");
+  const [selectedHotelId, setSelectedHotelId] = useState<string>("");
+  const [hotelName, setHotelName] = useState<string>("");
+  const [floorPlanImage, setFloorPlanImage] = useState<string>(""); // URL
 
-  // 2) Fields for editing area data
-  const [zoneName, setZoneName] = useState("");
-  const [zoneDesc, setZoneDesc] = useState("");
-  const [zoneImage, setZoneImage] = useState("");
+  useEffect(() => {
+    if (!areaSelectToEdit?.id) return;
+    setSelectedHotelId(areaSelectToEdit.id);
+    setHotelName(areaSelectToEdit.name ?? "");
+    setFloorPlanImage(areaSelectToEdit.floorPlanImage ?? "");
+  }, [areaSelectToEdit]);
 
-  // GraphQL: re-fetch areas so updated info appears immediately
-  const [{}, reexecuteQuery] = useQuery({
+  const selectedHotel = useMemo(
+    () => areas.find((a) => a.id === selectedHotelId),
+    [areas, selectedHotelId]
+  );
+
+  const openModal = () => {
+    if (areaSelectToEdit?.id) {
+      setSelectedHotelId(areaSelectToEdit.id);
+      setHotelName(areaSelectToEdit.name ?? "");
+      setFloorPlanImage(areaSelectToEdit.floorPlanImage ?? "");
+    } else if (areas.length > 0 && !selectedHotelId) {
+      // default to first hotel
+      setSelectedHotelId(areas[0].id);
+      setHotelName(areas[0].name ?? "");
+      setFloorPlanImage(areas[0].floorPlanImage ?? "");
+    }
+    setIsOpen(true);
+  };
+
+  const closeModal = () => setIsOpen(false);
+
+  const [, reexecuteHotelsQuery] = useQuery({
     query: GetAreasNameDescriptionDocument,
     pause: true,
-    variables: {
-        orderBy: { createdAt: "asc" },
-      }, // We'll call reexecuteQuery manually on success
+    variables: { orderBy: { createdAt: "asc" as any } },
   });
-  
 
-  // GraphQL: editArea mutation
-  const [{ fetching: updating }, editArea] = useMutation<
+  const [{ fetching, error }, editArea] = useMutation<
     EditAreaMutation,
     EditAreaMutationVariables
   >(EditAreaDocument);
 
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedHotelId) return;
 
-  // ---------------------------
-  // OPEN/CLOSE MODAL
-  // ---------------------------
-  const openModal = () => {
-    // If we already have a selected area from props, use that;
-    // else pick the first from areas[] if it exists:
-    const initialId =
-      areaSelectToEdit?.id ||
-      (areas.length > 0 ? areas[0].id : "");
+    const result = await editArea({
+      editAreaId: selectedHotelId,
+      name: hotelName.trim(),
+      floorPlanImage: floorPlanImage.trim() || null,
+    });
 
-    setSelectedAreaId(initialId);
-    // Pre-fill fields if we have an existing area
-    if (areaSelectToEdit) {
-      setZoneName(areaSelectToEdit.name || "");
-      setZoneDesc(areaSelectToEdit.description || "");
-      setZoneImage(areaSelectToEdit.floorPlanImage || "");
-    } else if (areas.length > 0) {
-      setZoneName(areas[0].name || "");
-      setZoneDesc(areas[0].description || "");
-      setZoneImage(areas[0].floorPlanImage || "");
+    if (result.error) {
+      console.error("editArea error:", result.error);
+      toast.error("Failed to update hotel.");
+      return;
     }
 
-    setIsOpen(true);
+    await reexecuteHotelsQuery({ requestPolicy: "network-only" });
+    toast.success("Hotel updated.", { duration: 900 });
+    closeModal();
   };
-
-  const closeModal = () => {
-    setIsOpen(false);
-    // Optional: Reset fields
-    setSelectedAreaId("");
-    setZoneName("");
-    setZoneDesc("");
-    setZoneImage("");
-  };
-
-  // ---------------------------
-  // HANDLE DROPDOWN CHANGE
-  // ---------------------------
-  // If you want the user to be able to switch areas within the modal:
-  const handleSelectArea = (id: string) => {
-    setSelectedAreaId(id);
-    const found = areas.find((a) => a.id === id);
-    if (found) {
-      setZoneName(found.name || "");
-      setZoneDesc(found.description || "");
-      setZoneImage(found.floorPlanImage || "");
-    } else {
-      setZoneName("");
-      setZoneDesc("");
-      setZoneImage("");
-    }
-  };
-
-  // ---------------------------
-  // IMAGE UPLOAD HANDLER
-  // ---------------------------
-  const getMenuImageFile = async (file: File) => {
-    try {
-      const res = await SupabaseImageUpload(file);
-      if (res) {
-        setZoneImage(res);
-        toast.success("Floor plan image uploaded!");
-        console.log(res);
-      }
-    } catch (error) {
-      toast.error(`Error uploading image: ${error}`, { duration: 3000 });
-    }
-  };
-
-  // ---------------------------
-  // SUBMIT EDIT
-  // ---------------------------
-  const handleUpdateArea = async () => {
-    if (!selectedAreaId) return;
-
-    try {
-      const result = await editArea({
-        editAreaId: selectedAreaId,
-        name: zoneName || undefined,
-        description: zoneDesc || undefined,
-        floorPlanImage: zoneImage || undefined,
-      });
-
-      if (result.data?.editArea?.id) {
-        toast.success("Area updated successfully!", { duration: 1200 });
-        // Re-fetch the list of areas to see the changes
-        reexecuteQuery({ requestPolicy: "network-only" });
-        closeModal();
-      }
-    } catch (error) {
-      console.error("Error editing area:", error);
-      toast.error("Failed to update area.");
-    }
-  };
-
-
 
   return (
     <>
-      {/* 
-        TRIGGER TO OPEN MODAL
-        Could be an icon + text. 
-      */}
-      
-      <div
+      <button
+        type="button"
         onClick={openModal}
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition"
+        className="text-sm bg-yellow-600 text-white px-3 py-2 rounded-lg shadow hover:bg-yellow-700 transition"
+        aria-label="Edit hotel"
       >
-        <FaEdit className="h-5 w-5" aria-hidden="true"
-      />
-        <span className="text-sm font-medium">Edit Area</span>
-      </div>
+        Edit Hotel
+      </button>
 
-      {/* 
-        EDIT ZONE MODAL
-      */}
-      <Modal isOpen={isOpen} closeModal={closeModal}>
-        <div className="relative p-4 w-full max-w-md md:h-auto mx-auto bg-white rounded-lg shadow">
-          {/* Title & Icon */}
-          <div className="text-center">
-            <FaEdit
-              className="text-gray-500 w-10 h-10 mb-2 mx-auto"
-              aria-hidden="true"
-            />
-            <h2 className="text-lg font-semibold text-gray-700 mb-4">
-              Edit Zone
-            </h2>
+      <Modal isOpen={isOpen} closeModal={closeModal} title="Edit Hotel">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label
+              htmlFor="hotelSelectEdit"
+              className="block text-sm font-medium mb-1"
+            >
+              Select Hotel
+            </label>
+            <select
+              id="hotelSelectEdit"
+              value={selectedHotelId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedHotelId(id);
+
+                const found = areas.find((a) => a.id === id);
+                setHotelName(found?.name ?? "");
+                setFloorPlanImage(found?.floorPlanImage ?? "");
+              }}
+              className="w-full border border-gray-300 rounded px-3 py-2"
+            >
+              <option value="">-- Select a hotel --</option>
+              {areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* CONTENT */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleUpdateArea();
-            }}
-            className="flex flex-col gap-4"
-          >
-            {/* (Optional) Select which area to edit */}
-            {areas.length > 0 && (
-              <div>
-                <label
-                  htmlFor="areaSelect"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Select Zone
-                </label>
-                <select
-                  id="areaSelect"
-                  value={selectedAreaId}
-                  onChange={(e) => handleSelectArea(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
-                >
-                  <option value="">-- Choose an area --</option>
-                  {areas.map((area) => (
-                    <option key={area.id} value={area.id}>
-                      {area.name}
-                    </option>
-                  ))}
-                </select>
+          <div>
+            <label htmlFor="hotelNameEdit" className="block text-sm font-medium mb-1">
+              Hotel Name
+            </label>
+            <input
+              id="hotelNameEdit"
+              type="text"
+              value={hotelName}
+              onChange={(e) => setHotelName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="floorPlanImage" className="block text-sm font-medium mb-1">
+              Floor Plan Image URL (optional)
+            </label>
+            <input
+              id="floorPlanImage"
+              type="url"
+              value={floorPlanImage}
+              onChange={(e) => setFloorPlanImage(e.target.value)}
+              placeholder="https://…"
+              className="w-full px-3 py-2 border border-gray-300 rounded"
+            />
+            {floorPlanImage ? (
+              <div className="mt-2">
+                <p className="text-xs text-gray-500 mb-1">Preview</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={floorPlanImage}
+                  alt={selectedHotel?.name ?? "Floor plan"}
+                  className="w-full max-h-40 object-cover rounded border"
+                />
               </div>
-            )}
+            ) : null}
+          </div>
 
-            {/* Name */}
-            <div>
-              <label
-                htmlFor="zoneName"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Zone Name
-              </label>
-              <input
-                id="zoneName"
-                type="text"
-                value={zoneName}
-                onChange={(e) => setZoneName(e.target.value)}
-                placeholder="Zone name"
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
-                required
-              />
-            </div>
+          {error ? (
+            <p className="text-sm text-red-600">{error.message}</p>
+          ) : null}
 
-            {/* Description */}
-            <div>
-              <label
-                htmlFor="zoneDesc"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Description
-              </label>
-              <textarea
-                id="zoneDesc"
-                value={zoneDesc}
-                onChange={(e) => setZoneDesc(e.target.value)}
-                placeholder="Optional description..."
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
-              />
-            </div>
-
-            {/* Floor Plan Image Upload */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Floor Plan Image
-              </label>
-              {/* Show current image thumbnail if available */}
-              {zoneImage && (
-                <div className="mb-2">
-                  <Image
-                    src={zoneImage}
-                    alt="Floor Plan Preview"
-                    className="w-full h-auto max-h-48 object-contain border rounded"
-                  />
-
-                </div>
-
-
-              )}
-
-              {/* Upload input */}
-              <UploadImg handleCallBack={getMenuImageFile} id="editZoneFloorPlan" />
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeModal}
-                className="py-2 px-4 text-sm font-medium text-gray-500 bg-gray-200 
-                  rounded hover:bg-gray-300 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!selectedAreaId || updating}
-                className="py-2 px-4 text-sm font-medium text-white bg-blue-600 
-                  rounded hover:bg-blue-700 transition disabled:bg-gray-400"
-              >
-                {updating ? "Updating..." : "Save Changes"}
-              </button>
-            </div>
-          </form>
-        </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded hover:bg-gray-300 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={fetching || !selectedHotelId}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {fetching ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
       </Modal>
     </>
   );
 };
 
-export default EditZoneModal;
+export default EditHotelModal;

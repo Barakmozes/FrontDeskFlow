@@ -1,343 +1,355 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
-import { useQuery, useMutation } from "@urql/next";
-
-import { useRestaurantStore, TableInStore } from "@/lib/AreaStore";
-import TablesSection from "./TablesSection";
-import TableCard from "./TableCard";
+import { useMutation, useQuery } from "@urql/next";
+import toast from "react-hot-toast";
 
 import {
+  GetAreasNameDescriptionDocument,
+  GetAreasNameDescriptionQuery,
+  GetAreasNameDescriptionQueryVariables,
   GetTablesDocument,
   GetTablesQuery,
   GetTablesQueryVariables,
-  BasicArea,
-  Area,
   UpdateManyTablesDocument,
+  UpdateManyTablesMutation,
+  UpdateManyTablesMutationVariables,
 } from "@/graphql/generated";
-import { Table } from "@prisma/client";
 
-import AddZoneForm from "./CRUD_Zone-CRUD_Table/AddZoneForm";
-import DeleteZoneModal from "./CRUD_Zone-CRUD_Table/DeleteZoneModal";
-import EditZoneModal from "./CRUD_Zone-CRUD_Table/EditZoneModal";
-import toast from "react-hot-toast";
-import AddTableModal from "./CRUD_Zone-CRUD_Table/AddTableModal";
+import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
+
+import RoomsSection from "./TablesSection";
+import RoomCard from "./TableCard";
+
+import AddHotelForm from "./CRUD_Zone-CRUD_Table/AddZoneForm";
+import DeleteHotelModal from "./CRUD_Zone-CRUD_Table/DeleteZoneModal";
+import EditHotelModal from "./CRUD_Zone-CRUD_Table/EditZoneModal";
+import AddRoomModal from "./CRUD_Zone-CRUD_Table/AddTableModal";
+
+type ListFilter = "ALL" | "AVAILABLE" | "OCCUPIED";
+
+const asIsoString = (value: unknown): string => {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString();
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
+};
 
 /**
- * ZoneRestaurant
- * Renders:
- *  - "Show All Tables" grouped by area
- *  - or a single selectedArea's tables
- *  - or a default message if no selection
+ * HotelLayout
+ * Client-side mapping only:
+ *  - Backend Area  => Hotel
+ *  - Backend Table => Room
  */
-const ZoneRestaurant = () => {
-  // 1) GraphQL: Fetch the tables
-  const [{ data, fetching, error }] = useQuery<
-    GetTablesQuery,
-    GetTablesQueryVariables
-  >({
+const HotelLayout = () => {
+  const [listFilter, setListFilter] = useState<ListFilter>("ALL");
+
+  const {
+    hotels,
+    setHotels,
+    selectedHotel,
+    setSelectedHotel,
+    clearSelectedHotel,
+    rooms,
+    setRooms,
+    moveRoom,
+    scale,
+    adjustScale,
+  } = useHotelStore();
+
+  // ---- Fetch hotels (areas) ----
+  const [
+    { data: hotelsData, fetching: hotelsFetching, error: hotelsError },
+  ] = useQuery<GetAreasNameDescriptionQuery, GetAreasNameDescriptionQueryVariables>({
+    query: GetAreasNameDescriptionDocument,
+    variables: {
+      orderBy: { createdAt: "asc" as any },
+    },
+  });
+
+  useEffect(() => {
+    const fetched = hotelsData?.getAreasNameDescription;
+    if (!fetched) return;
+
+    setHotels(
+      fetched.map((h) => ({
+        id: h.id,
+        name: h.name,
+        floorPlanImage: h.floorPlanImage ?? null,
+        createdAt: h.createdAt,
+      }))
+    );
+  }, [hotelsData, setHotels]);
+
+  // ---- Fetch rooms (tables) ----
+  const [
+    { data: roomsData, fetching: roomsFetching, error: roomsError },
+    reexecuteRoomsQuery,
+  ] = useQuery<GetTablesQuery, GetTablesQueryVariables>({
     query: GetTablesDocument,
     variables: {},
   });
-  const [{}, reexecuteTablesQuery] = useQuery({
-    query: GetTablesDocument,
-    pause: true,
-  });
 
-
-  // GraphQL mutation to update table position in DB
-  const [updateManyResult, updateManyTables] = useMutation(
-    UpdateManyTablesDocument
-  );
-  // 2) Zustand store references
-  const {
-    tables,
-    setTables,
-    selectedArea,
-    clearSelectedArea,
-    areas,
-    scale,
-    moveTable,
-    adjustScale,
-  } = useRestaurantStore();
-
-  // 3) Local UI state: showAllTables toggles the "all areas" view
-  const [showAllTables, setShowAllTables] = useState(false);
-  const [showAllTablesable, setshowAllTablesable] = useState(false);
-  
-  // When an area is selected in the store, we hide the "show all" view
   useEffect(() => {
-    if (selectedArea) {
-      setShowAllTables(false);
-      setshowAllTablesable(false);
-    }
-  }, [selectedArea]);
+    const fetched = roomsData?.getTables;
+    if (!fetched) return;
 
-// On first load or any refetch, populate local store
-useEffect(() => {
-  if (data?.getTables?.length) {
-    const tablesFromServer: Table[] = data.getTables;
+    const mapped: RoomInStore[] = fetched.map((t) => ({
+      id: t.id,
+      roomNumber: t.tableNumber,
+      hotelId: t.areaId,
+      position: (t.position as { x: number; y: number }) ?? { x: 0, y: 0 },
+      capacity: t.diners,
+      isOccupied: t.reserved,
+      notes: t.specialRequests ?? [],
+      createdAt: asIsoString(t.createdAt),
+      updatedAt: asIsoString(t.updatedAt),
+      dirty: false,
+    }));
 
-    setTables(
-      tablesFromServer.map((t) => ({
-        id: t.id,
-        tableNumber: t.tableNumber,
-        areaId: t.areaId,
-        position: t.position as { x: number; y: number },
-        dirty: false,
-        diners: t.diners,
-        reserved: t.reserved,
-        specialRequests: t.specialRequests,
-        createdAt: t.createdAt,
-        updatedAt: t.updatedAt,
-      }))
-    );
-  }
-}, [data, setTables]);
+    setRooms(mapped);
+  }, [roomsData, setRooms]);
 
-  // The locally updated tables
-  const localTables = tables;
-  // If an area is selected, filter local tables
-  const localFiltered = selectedArea
-    ? localTables.filter((t) => t.areaId === selectedArea.id)
-    : localTables;
+  // ---- Bulk save (layout positions) ----
+  const [{ fetching: savingLayout }, updateManyRooms] = useMutation<
+    UpdateManyTablesMutation,
+    UpdateManyTablesMutationVariables
+  >(UpdateManyTablesDocument);
 
-  // Handlers
-  const handleShowAllTables = () => {
-    // Clear any selected area and show "all areas" mode
-    clearSelectedArea();
-    setShowAllTables(true);
-    setshowAllTablesable(false);
-  };
-
-  const handleShowAllTablesable = () => {
-    clearSelectedArea();
-    setShowAllTables(false);
-    setshowAllTablesable(true);
-  };
-
-  const handleClearScreen = () => {
-    // Reset the area selection and hide the "all" view
-    clearSelectedArea();
-    setshowAllTablesable(false);
-    setShowAllTables(false);
-  };
-
-  const handleSaveChanges = async () => {
-    // Get all local tables from Zustand
-    const allTables = useRestaurantStore.getState().tables;
-    // Filter only those with dirty === true
-    const changedTables = allTables.filter((t) => t.dirty);
-
-    if (changedTables.length === 0) {
-      console.log("No changed tables to save.");
+  const handleSaveLayout = async () => {
+    const changed = useHotelStore.getState().rooms.filter((r) => r.dirty);
+    if (changed.length === 0) {
+      toast("No layout changes to save.", { duration: 900 });
       return;
     }
 
-    try {
-      // Prepare the array for GraphQL
-      // Each object must match UpdateManyTablesInput: { id, position?, areaId?, etc. }
-      const updates = changedTables.map((t) => ({
-        id: t.id,
-        position: t.position,
-        areaId: t.areaId,
-        // If you need to update reserved/diners as well, include them
-        reserved: t.reserved
-      }));
+    const updates = changed.map((r) => ({
+      id: r.id,
+      areaId: r.hotelId,
+      position: r.position,
+    }));
 
-      // Send the mutation request
-      const result = await updateManyTables({ updates });
-      if (result.error) {
-        console.error("Failed to update tables:", result.error);
-        return;
-      }
+    const result = await updateManyRooms({ updates });
 
-      // 1) Clear dirty flags locally
-      useRestaurantStore.setState((state) => ({
-        tables: state.tables.map((tbl) => ({ ...tbl, dirty: false })),
-      }));
-
-      // 2) Re-fetch from server if you want the updated data
-      reexecuteTablesQuery({ requestPolicy: "network-only" });
-      // Or do a direct cache update if you prefer.
-      toast.success("Tables updated successfully!", { duration: 800 });
-    } catch (err) {
-      console.error("Error saving changes:", err);
+    if (result.error) {
+      console.error("updateManyTables error:", result.error);
+      toast.error("Failed to save layout.");
+      return;
     }
+
+    // Clear dirty flags locally
+    useHotelStore.setState((state) => ({
+      rooms: state.rooms.map((room) => ({ ...room, dirty: false })),
+    }));
+
+    toast.success("Layout saved.", { duration: 900 });
+    reexecuteRoomsQuery({ requestPolicy: "network-only" });
   };
 
-  // 4) Rendering
+  // ---- Derived room sets ----
+  const selectedHotelRooms = useMemo(() => {
+    if (!selectedHotel) return [];
+    return rooms.filter((r) => r.hotelId === selectedHotel.id);
+  }, [rooms, selectedHotel]);
+
+  const roomsForList = useMemo(() => {
+    if (listFilter === "AVAILABLE") return rooms.filter((r) => !r.isOccupied);
+    if (listFilter === "OCCUPIED") return rooms.filter((r) => r.isOccupied);
+    return rooms;
+  }, [rooms, listFilter]);
+
+  // ---- UI actions ----
+  const showAllRooms = () => {
+    clearSelectedHotel();
+    setListFilter("ALL");
+  };
+
+  const showAvailableRooms = () => {
+    clearSelectedHotel();
+    setListFilter("AVAILABLE");
+  };
+
+  const showOccupiedRooms = () => {
+    clearSelectedHotel();
+    setListFilter("OCCUPIED");
+  };
+
+  const handleOpenHotelLayout = (hotelId: string) => {
+    setSelectedHotel(hotelId);
+  };
+
+  // ---- Render ----
+  const isLoading = hotelsFetching || roomsFetching;
+
   return (
-    
     <DndProvider backend={HTML5Backend}>
       <div className="px-6 bg-gray-50 min-h-screen">
-        {/* Header Section */}
-        <div className="flex items-center justify-around bg-white px-2 rounded-lg shadow-md mb-2">
-          <h2 className="text-xl font-bold text-gray-800">Restaurant Zones</h2>
-          <div className="flex gap-4">
-          <button
-              onClick={handleClearScreen}
-              className="text-sm bg-red-600 text-white px-4 py-2 rounded-lg shadow hover:bg-red-700 transition"
-              aria-label="Clear Screen"
-            >
-              Clear Screen
-            </button>
+        {/* Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white px-4 py-3 rounded-lg shadow-md mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">
+              Hotel Layout
+              {selectedHotel?.name ? (
+                <span className="text-gray-500 font-medium"> — {selectedHotel.name}</span>
+              ) : null}
+            </h2>
+            <p className="text-xs text-gray-500">
+              Hotels are Areas in the backend. Rooms are Tables. Drag rooms on the floor plan, then click “Save Layout”.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
             <button
-              onClick={handleShowAllTables}
-              className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
-              aria-label="Show All Tables"
+              type="button"
+              onClick={clearSelectedHotel}
+              className="text-sm bg-gray-200 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-300 transition"
             >
-              Show All Tables
+              Clear Selection
             </button>
+
             <button
-              onClick={handleShowAllTablesable}
-              className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
-              aria-label="Show All Tables"
+              type="button"
+              onClick={showAllRooms}
+              className="text-sm bg-green-600 text-white px-3 py-2 rounded-lg shadow hover:bg-green-700 transition"
             >
-              Show All Tables available
+              All Rooms
             </button>
+
             <button
-              onClick={handleShowAllTablesable}
-              className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
-              aria-label="Show All Tables"
+              type="button"
+              onClick={showAvailableRooms}
+              className="text-sm bg-green-600 text-white px-3 py-2 rounded-lg shadow hover:bg-green-700 transition"
             >
-              Show All Tables not pay
+              Available Rooms
             </button>
+
             <button
-              className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
-              aria-label="Show All Tables"
+              type="button"
+              onClick={showOccupiedRooms}
+              className="text-sm bg-green-600 text-white px-3 py-2 rounded-lg shadow hover:bg-green-700 transition"
             >
-              <AddZoneForm />
+              Occupied Rooms
             </button>
+
+            <div className="w-px bg-gray-200 mx-1" />
+
+            <AddHotelForm />
+            <DeleteHotelModal areas={hotels} areaSelectToDelete={selectedHotel} />
+            <EditHotelModal areas={hotels} areaSelectToEdit={selectedHotel} />
+            <AddRoomModal hotels={hotels} selectedHotel={selectedHotel} />
+
+            <div className="w-px bg-gray-200 mx-1" />
+
             <button
-              className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
-              aria-label="Show All Tables"
-            >
-              <DeleteZoneModal
-                areas={areas as BasicArea[]}
-                areaSelectToDelete={selectedArea as BasicArea}
-              />
-            </button>
-            <button
-              className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
-              aria-label="Show All Tables"
-            >
-              <EditZoneModal
-                areas={areas as Area[]}
-                areaSelectToEdit={selectedArea as Area}
-              />
-            </button>
-         
-            <button
+              type="button"
               onClick={() => adjustScale(0.1)}
               className="text-sm bg-blue-600 text-white px-3 py-2 rounded-lg shadow hover:bg-blue-700 transition"
-              aria-label="Zoom In"
             >
               Zoom In
             </button>
+
             <button
+              type="button"
               onClick={() => adjustScale(-0.1)}
               className="text-sm bg-blue-600 text-white px-3 py-2 rounded-lg shadow hover:bg-blue-700 transition"
-              aria-label="Zoom Out"
             >
               Zoom Out
             </button>
+
             <button
-              onClick={handleSaveChanges}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              type="button"
+              onClick={handleSaveLayout}
+              disabled={savingLayout}
+              className={`text-sm px-3 py-2 rounded-lg shadow transition ${
+                savingLayout
+                  ? "bg-gray-300 text-gray-700 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
             >
-              Save Table Positions
+              {savingLayout ? "Saving…" : "Save Layout"}
             </button>
-            <AddTableModal
-              allAreas={areas} // array of BasicArea
-              areaSelectID={selectedArea} // optional pre-selected area
-            />
-    
           </div>
         </div>
 
-        {/* Content Section */}
-        <div>
-          {/* 4A) If "Show All" is on, we group tables by zone */}
-          {showAllTables ? (
-            <div className="grid gap-6">
-              {areas.map((zone) => {
-                // Filter tables by matching areaId
-                const zoneTables = localFiltered.filter(
-                  (tbl) => tbl.areaId === zone.id
-                );
-                // Render each zone with its tables 
-                return (
-                  <div key={zone.id} className="border rounded-lg p-4 bg-white">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                      {zone.name}
-                    </h3>
+        {/* Loading & errors */}
+        {isLoading ? (
+          <p className="text-sm text-gray-500 mb-2">Loading…</p>
+        ) : null}
+
+        {hotelsError || roomsError ? (
+          <p className="text-sm text-red-600 mb-2">
+            Failed to load data: {(hotelsError || roomsError)?.message}
+          </p>
+        ) : null}
+
+        {/* Content */}
+        {selectedHotel ? (
+          <RoomsSection
+            hotel={selectedHotel}
+            rooms={selectedHotelRooms}
+            scale={scale}
+            moveRoom={moveRoom}
+          />
+        ) : hotels.length === 0 ? (
+          <div className="text-center text-gray-500 mt-12">
+            <p className="text-lg font-medium">
+              No hotels found yet. Create your first hotel to start placing rooms.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-6">
+            {hotels.map((hotel) => {
+              const hotelRooms = roomsForList.filter((r) => r.hotelId === hotel.id);
+
+              const total = rooms.filter((r) => r.hotelId === hotel.id).length;
+              const available = rooms.filter(
+                (r) => r.hotelId === hotel.id && !r.isOccupied
+              ).length;
+              const occupied = total - available;
+
+              return (
+                <div key={hotel.id} className="border rounded-lg p-4 bg-white">
+                  <div className="flex items-center justify-between gap-4 mb-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800">
+                        {hotel.name}
+                      </h3>
+                      <p className="text-xs text-gray-500">
+                        Rooms: {total} • Available: {available} • Occupied: {occupied}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenHotelLayout(hotel.id)}
+                      className="text-sm bg-blue-600 text-white px-3 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+                    >
+                      Open Layout
+                    </button>
+                  </div>
+
+                  {hotelRooms.length === 0 ? (
+                    <p className="text-sm text-gray-500">No rooms match this filter.</p>
+                  ) : (
                     <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                      {zoneTables.map((table) => (
-                        <TableCard
-                          key={table.id}
-                          table={table as TableInStore}
-                        />
-                        
+                      {hotelRooms.map((room) => (
+                        <RoomCard key={room.id} room={room} />
                       ))}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : showAllTablesable ? ( // Render each zone with its tables available
-            <div className="grid gap-6">
-              {areas.map((zone) => {
-                // Filter tables by matching areaId
-                const zoneTables = localFiltered.filter(                  
-                  (tbl) => tbl.areaId === zone.id && !tbl.reserved
-                );
-                return (
-                  <div key={zone.id} className="border rounded-lg p-4 bg-white">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                      {zone.name}
-                    </h3>
-                    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                      {zoneTables.map((table) => (
-                        <TableCard
-                          key={table.id}
-                          table={table as TableInStore}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : selectedArea ? (
-            // 4B) If an area is selected, pass the filtered tables to TablesSection
-            <div>
-              {/* Filter tables for the selectedArea.id */}
-              <TablesSection
-                areaSelect={selectedArea}
-                scale={scale}
-                moveTable={(tableId, areaId, newPos) =>
-                  moveTable(tableId, areaId, newPos)
-                }
-                filteredTables={localFiltered}
-              />
-            </div>
-          ) : (
-            // 4C) Default message
-            <div className="text-center text-gray-500 mt-12">
-              <p className="text-lg font-medium">
-                Select a zone to display tables or use “Show All Tables” for an
-                overview.
-              </p>
-            </div>
-            
-          )}
-        </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </DndProvider>
   );
 };
 
-export default ZoneRestaurant;
+export default HotelLayout;

@@ -1,109 +1,116 @@
 "use client";
 
 import React, { useState } from "react";
-import { HiOutlineTrash } from "react-icons/hi2";
+import { useMutation } from "@urql/next";
+import toast from "react-hot-toast";
+import { HiTrash } from "react-icons/hi2";
+
 import Modal from "../../Common/Modal";
-import { useMutation, useQuery } from "@urql/next";
-import { Table } from "@prisma/client";
+
 import {
   DeleteTableDocument,
   DeleteTableMutation,
   DeleteTableMutationVariables,
-  GetTablesDocument,
 } from "@/graphql/generated";
-import toast from "react-hot-toast";
 
-interface DeleteTableModalProps {
-  /** The table object to be deleted */
-  table: Table;
+import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
+
+interface DeleteRoomModalProps {
+  room: RoomInStore;
 }
 
-const DeleteTableModal: React.FC<DeleteTableModalProps> = ({ table }) => {
+/**
+ * DeleteRoomModal
+ * Backend mapping: Table -> Room
+ */
+const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({ room }) => {
+  const removeRoom = useHotelStore((s) => s.removeRoom);
+
   const [isOpen, setIsOpen] = useState(false);
+  const [confirmValue, setConfirmValue] = useState("");
 
-  // Prepare re-fetch of all tables (so we see immediate update after deletion)
-  const [{}, reexecuteTables] = useQuery({
-    query: GetTablesDocument,
-    pause: true,
-  });
+  const closeModal = () => setIsOpen(false);
+  const openModal = () => {
+    setConfirmValue("");
+    setIsOpen(true);
+  };
 
-  // Mutation to delete a table
-  const [{ fetching: deleting }, deleteTable] = useMutation<
+  const [{ fetching, error }, deleteTable] = useMutation<
     DeleteTableMutation,
     DeleteTableMutationVariables
   >(DeleteTableDocument);
 
-  // Open/close the modal
-  const openModal = () => setIsOpen(true);
-  const closeModal = () => setIsOpen(false);
-
-  // Handle the actual deletion
   const handleDelete = async () => {
-    try {
-      const result = await deleteTable({ deleteTableId: table.id });
-
-      if (result.data?.deleteTable?.tableNumber !== undefined) {
-        // Show success toast
-        toast.success(
-          `Table #${result.data.deleteTable.tableNumber} deleted successfully!`,
-          { duration: 1200 }
-        );
-        // Re-fetch all tables
-        reexecuteTables({ requestPolicy: "network-only" });
-      }
-    } catch (error) {
-      console.error("Error deleting table:", error);
-      toast.error("Failed to delete table.");
-    } finally {
-      closeModal();
+    const mustType = String(room.roomNumber);
+    if (confirmValue.trim() !== mustType) {
+      toast.error(`Type ${mustType} to confirm deletion.`);
+      return;
     }
+
+    const result = await deleteTable({ deleteTableId: room.id });
+
+    if (result.error) {
+      console.error("deleteTable error:", result.error);
+      toast.error("Failed to delete room.");
+      return;
+    }
+
+    removeRoom(room.id);
+    toast.success("Room deleted.", { duration: 900 });
+    closeModal();
   };
 
   return (
     <>
-      {/* Trash icon to open the modal */}
-      <HiOutlineTrash
+      <button
+        type="button"
         onClick={openModal}
-        className="cursor-pointer h-5 w-5 text-red-500 hover:text-red-600 transition"
-        aria-label={`Delete table #${table.tableNumber}`}
-        title={`Delete table #${table.tableNumber}`}
-      />
+        className="p-2 rounded hover:bg-gray-100 transition"
+        aria-label="Delete room"
+        title="Delete room"
+      >
+        <HiTrash className="w-5 h-5 text-red-600" />
+      </button>
 
-      {/* The Delete Confirmation Modal */}
-      <Modal isOpen={isOpen} closeModal={closeModal}>
-        <div className="relative p-4 w-full max-w-md md:h-auto mx-auto bg-white rounded-lg shadow">
-          <div className="text-center">
-            <HiOutlineTrash
-              className="text-gray-400 w-12 h-12 mb-3.5 mx-auto"
-              aria-hidden="true"
+      <Modal isOpen={isOpen} closeModal={closeModal} title={`Delete Room ${room.roomNumber}`}>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            This will permanently delete <span className="font-semibold">Room {room.roomNumber}</span>.
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="confirmRoomNumber">
+              Type <span className="font-semibold">{room.roomNumber}</span> to confirm
+            </label>
+            <input
+              id="confirmRoomNumber"
+              type="text"
+              value={confirmValue}
+              onChange={(e) => setConfirmValue(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2"
             />
-            <h2 className="text-lg font-semibold text-gray-700 mb-4">
-              Delete Table #{table.tableNumber}
-            </h2>
-            <p className="mb-4 text-sm text-gray-500">
-              Are you sure you want to permanently delete this table?
-            </p>
+          </div>
 
-            {/* Action Buttons */}
-            <div className="flex justify-center items-center space-x-4">
-              <button
-                onClick={closeModal}
-                type="button"
-                className="py-2 px-3 text-sm font-medium text-gray-700 bg-gray-200 
-                  rounded-lg hover:bg-gray-300 focus:outline-none transition"
-              >
-                No, cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                type="button"
-                disabled={deleting}
-                className="py-2 px-3 text-sm font-medium text-white bg-red-600 
-                  rounded-lg hover:bg-red-700 transition disabled:bg-gray-400"
-              >
-                {deleting ? "Deleting..." : "Yes, delete"}
-              </button>
-            </div>
+          {error ? (
+            <p className="text-sm text-red-600">{error.message}</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded hover:bg-gray-300 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={fetching}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700 transition disabled:opacity-50"
+            >
+              {fetching ? "Deleting…" : "Delete"}
+            </button>
           </div>
         </div>
       </Modal>
@@ -111,4 +118,4 @@ const DeleteTableModal: React.FC<DeleteTableModalProps> = ({ table }) => {
   );
 };
 
-export default DeleteTableModal;
+export default DeleteRoomModal;

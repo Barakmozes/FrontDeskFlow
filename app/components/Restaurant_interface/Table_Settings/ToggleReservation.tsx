@@ -1,72 +1,75 @@
-import { Table } from "@prisma/client";
-import { useState } from "react";
-import { useQuery, useMutation } from "@urql/next";
+"use client";
+
+import React from "react";
+import { useMutation } from "@urql/next";
+import toast from "react-hot-toast";
+
 import {
-  GetTablesDocument,
   ToggleTableReservationDocument,
   ToggleTableReservationMutation,
   ToggleTableReservationMutationVariables,
 } from "@/graphql/generated";
-import toast from "react-hot-toast";
-interface Props {
-  table: Table;
+
+import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
+
+interface ToggleOccupancyProps {
+  room: RoomInStore;
 }
 
-const ToggleReservation = ({ table }: Props) => {
-  const [reserved, setReserved] = useState(table.reserved);
+/**
+ * ToggleOccupancy
+ * Backend mapping: Table.reserved -> Room.isOccupied
+ */
+const ToggleOccupancy: React.FC<ToggleOccupancyProps> = ({ room }) => {
+  const updateRoom = useHotelStore((state) => state.updateRoom);
 
-  // GraphQL mutation to update table position in DB
-  const [ToggleTableReservationResult, ToggleTableReservationTable] =
-    useMutation(ToggleTableReservationDocument);
+  const [{ fetching }, toggleReservation] = useMutation<
+    ToggleTableReservationMutation,
+    ToggleTableReservationMutationVariables
+  >(ToggleTableReservationDocument);
 
-  // Prepare re-fetch of all tables (so we see immediate update after deletion)
-  const [{ data }, reexecuteTables] = useQuery({
-    query: GetTablesDocument,
-    pause: true,
-  });
+  const handleToggle = async () => {
+    const previous = room.isOccupied;
+    const next = !previous;
 
-  const handleToggleReservation = async () => {
-    // Save the new toggled value in a local variable
-    const newReserved = !reserved;
+    // Optimistic UI update
+    updateRoom(room.id, { isOccupied: next });
 
-    // 1) Update the local state
-    setReserved(newReserved);
-  
-    try {
-      const result = await ToggleTableReservationTable({
-        toggleTableReservationId: table.id,
-        reserved: reserved,
-      });
+    const result = await toggleReservation({
+      toggleTableReservationId: room.id,
+      reserved: next,
+    });
 
-      if (result.data) {
-        // Show success toast
-        toast.success(
-          `Table #${result.data.toggleTableReservation.reserved}  successfully!`,
-          { duration: 1200 }
-        );
-        // Re-fetch all tables
-        reexecuteTables({ requestPolicy: "network-only" });
-      }
-    } catch (error) {
-      console.error("Error deleting table:", error);
-      toast.error("Failed to delete table.");
-    } finally {
+    if (result.error) {
+      console.error("toggleReservation error:", result.error);
+      // Revert optimistic update
+      updateRoom(room.id, { isOccupied: previous });
+      toast.error("Failed to update room occupancy.");
+      return;
     }
+
+    toast.success(next ? "Marked as occupied" : "Marked as available", {
+      duration: 900,
+    });
   };
+
+  const buttonLabel = room.isOccupied ? "Mark Available" : "Mark Occupied";
 
   return (
     <button
-      onClick={handleToggleReservation}
-      className={` py-1 sm:py-1 text-xs sm:text-sm rounded font-bold ${
-        reserved ? "bg-red-200 text-red-700" : "bg-green-200 text-green-700"
+      type="button"
+      onClick={handleToggle}
+      disabled={fetching}
+      className={`text-sm px-3 py-2 rounded-lg shadow transition ${
+        fetching
+          ? "bg-gray-300 text-gray-700 cursor-not-allowed"
+          : "bg-blue-600 text-white hover:bg-blue-700"
       }`}
-      aria-label={`Mark table ${table.tableNumber} as ${
-        reserved ? "available" : "reserved"
-      }`}
+      aria-label={buttonLabel}
     >
-      {reserved ? "Release" : "Reserve"}
+      {fetching ? "Updating…" : buttonLabel}
     </button>
   );
 };
 
-export default ToggleReservation;
+export default ToggleOccupancy;
