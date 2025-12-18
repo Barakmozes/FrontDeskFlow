@@ -12,7 +12,7 @@
  * graphql\generated.ts שהוגדרו כאן בקובץ או בפריזמה לקוח או ב (Types)כמו כן אפשר לבחור להשתמש 
  */
 
-import { Menu } from "@prisma/client";
+import { Menu,Role } from "@prisma/client";
 
 // Promo and Category Types
 export type PromoTypes = {
@@ -87,3 +87,14 @@ export type CartActionTypes = {
  * • Extend as needed (e.g. 'es', 'fr').
  */
 export type LangCode = 'en' | 'he'
+
+export type UserRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  emailVerified: string | null; // אם אתה מסריאלייז ללקוח
+  image: string | null;
+  role: Role;
+  createdAt: string;
+  updatedAt: string;
+};

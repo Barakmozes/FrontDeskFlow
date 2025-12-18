@@ -1,87 +1,100 @@
 "use client";
 
-import { User } from "@prisma/client";
 import { useState } from "react";
-import { GoChevronDown } from "react-icons/go";
-import { HiUser } from "react-icons/hi2";
+import type { Role } from "@prisma/client";
+import type { UserRow } from "./types";
 
 type Props = {
-    user: User
-}
-
-const EditRoleForm = ({user}: Props) => {
-  const ROLES = ["USER", "ADMIN", "DELIVERY"];
-
-  const [role, setRole] = useState(ROLES[0]);
-  const [showChangeRole, setShowChangeRole] = useState(false);
-
-  return (
-    <>
-      <div className="my-8 space-y-4 ">
-        <div>
-          <label htmlFor="surname" className="form-label">
-            Email
-          </label>
-          <input
-            type="text"
-            name="email"
-            className="formInput"
-            placeholder="Email"
-            value={user.email as string}
-            disabled
-          />
-        </div>
-        <div className="flex mt-5">
-          <input
-            className="w-6 h-6 text-slate-900 bg-slate-100 rounded focus:outline-none "
-            type="checkbox"
-            checked={showChangeRole}
-            onChange={(e) => {
-              setShowChangeRole(e.target.checked);
-            }}
-          />
-          <div className="flex ml-3">
-            {" "}
-            <HiUser className="mr-2 h-5 w-5 text-green-700" />{" "}
-            <span className="text-slate-400">Change Role</span>{" "}
-          </div>
-        </div>
-
-        {showChangeRole ? (
-          <div>
-            <label htmlFor="brand" className="form-label">
-              User Type
-            </label>
-
-            <div className="relative inline-block w-full">
-              <select
-                id="leave-type"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="block w-full rounded-md appearance-none bg-white border
-                 border-green-400 px-4 py-2 pr-8 leading-tight  focus:outline-none  "
-              >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 ">
-                <GoChevronDown className="dark:text-gray-300" />
-              </div>
-            </div>
-
-            <button type="button" className="mt-4 form-button">
-              Change Role
-            </button>
-          </div>
-        ) : (
-          ""
-        )}
-      </div>
-    </>
-  );
+  user: UserRow;
+  onClose: () => void;
+  onUpdated: () => void;
 };
 
-export default EditRoleForm;
+const ROLES: Role[] = ["USER", "ADMIN", "DELIVERY", "WAITER", "CHEF", "MANAGER"];
+
+export default function EditRoleForm({ user, onClose, onUpdated }: Props) {
+  const [role, setRole] = useState<Role>(user.role);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function saveRole() {
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? "Failed to update role.");
+        return;
+      }
+
+      onUpdated();
+      onClose();
+    } catch {
+      setError("Network error while updating role.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="my-6 space-y-4">
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <label className="form-label">Username</label>
+        <input
+          type="text"
+          className="formInput"
+          value={user.email ?? ""}
+          disabled
+        />
+      </div>
+
+      <div>
+        <label className="form-label">Role</label>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as Role)}
+          className="block w-full rounded-md appearance-none bg-white border border-green-400 px-4 py-2 pr-8 leading-tight focus:outline-none"
+        >
+          {ROLES.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        <button
+          type="button"
+          className="rounded-md border px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          onClick={onClose}
+          disabled={loading}
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          className="form-button"
+          onClick={saveRole}
+          disabled={loading}
+        >
+          {loading ? "Saving..." : "Save Role"}
+        </button>
+      </div>
+    </div>
+  );
+}
