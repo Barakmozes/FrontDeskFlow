@@ -1068,6 +1068,53 @@ export type GetMenuUserFavoritesQueryVariables = Exact<{
 
 export type GetMenuUserFavoritesQuery = { __typename?: 'Query', getMenuUserFavorites: Array<{ __typename?: 'Menu', category: string, id: string, image: string, longDescr?: string | null, onPromo: boolean, prepType: Array<string>, price: number, sellingPrice?: number | null, shortDescr: string, title: string }> };
 
+export type GetNotificationsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetNotificationsQuery = { __typename?: 'Query', getNotifications: Array<{ __typename?: 'Notification', id: string, type: string, message: string, priority: NotificationPriority, status: NotificationStatus, userEmail: string, createdAt: any, updatedAt: any, user: { __typename?: 'User', id: string, email?: string | null, name?: string | null, role: Role } }> };
+
+export type GetUserNotificationsQueryVariables = Exact<{
+  userEmail: Scalars['String']['input'];
+}>;
+
+
+export type GetUserNotificationsQuery = { __typename?: 'Query', getUserNotifications: Array<{ __typename?: 'Notification', id: string, type: string, message: string, priority: NotificationPriority, status: NotificationStatus, userEmail: string, createdAt: any, updatedAt: any, user: { __typename?: 'User', id: string, email?: string | null, name?: string | null, role: Role } }> };
+
+export type AddNotificationMutationVariables = Exact<{
+  message: Scalars['String']['input'];
+  type: Scalars['String']['input'];
+  userEmail: Scalars['String']['input'];
+  priority?: InputMaybe<NotificationPriority>;
+  status?: InputMaybe<NotificationStatus>;
+}>;
+
+
+export type AddNotificationMutation = { __typename?: 'Mutation', addNotification: { __typename?: 'Notification', id: string, createdAt: any } };
+
+export type UpdateNotificationMutationVariables = Exact<{
+  updateNotificationId: Scalars['String']['input'];
+  message?: InputMaybe<Scalars['String']['input']>;
+  priority?: InputMaybe<NotificationPriority>;
+  status?: InputMaybe<NotificationStatus>;
+}>;
+
+
+export type UpdateNotificationMutation = { __typename?: 'Mutation', updateNotification: { __typename?: 'Notification', id: string, message: string, priority: NotificationPriority, status: NotificationStatus, updatedAt: any } };
+
+export type MarkNotificationAsReadMutationVariables = Exact<{
+  markNotificationAsReadId: Scalars['String']['input'];
+}>;
+
+
+export type MarkNotificationAsReadMutation = { __typename?: 'Mutation', markNotificationAsRead: { __typename?: 'Notification', id: string, status: NotificationStatus, updatedAt: any } };
+
+export type DeleteNotificationMutationVariables = Exact<{
+  deleteNotificationId: Scalars['String']['input'];
+}>;
+
+
+export type DeleteNotificationMutation = { __typename?: 'Mutation', deleteNotification: { __typename?: 'Notification', id: string } };
+
 export type GetOrdersQueryVariables = Exact<{
   first?: InputMaybe<Scalars['Int']['input']>;
   after?: InputMaybe<Scalars['ID']['input']>;
@@ -1110,6 +1157,56 @@ export type EditOrderMutationVariables = Exact<{
 
 
 export type EditOrderMutation = { __typename?: 'Mutation', editOrder: { __typename?: 'Order', id: string } };
+
+export type GetReservationQueryVariables = Exact<{
+  getReservationId: Scalars['String']['input'];
+}>;
+
+
+export type GetReservationQuery = { __typename?: 'Query', getReservation: { __typename?: 'Reservation', id: string, status: ReservationStatus, reservationTime: any, numOfDiners: number, userEmail: string, createdBy: string, createdAt: any, updatedAt: any, tableId: string, table: { __typename?: 'Table', id: string, tableNumber: number, areaId: string, reserved: boolean, specialRequests: Array<string> }, user: { __typename?: 'User', profile?: { __typename?: 'Profile', name?: string | null, phone?: string | null } | null } } };
+
+export type GetReservationsQueryVariables = Exact<{
+  status?: InputMaybe<ReservationStatus>;
+}>;
+
+
+export type GetReservationsQuery = { __typename?: 'Query', getReservations: Array<{ __typename?: 'Reservation', id: string, reservationTime: any, status: ReservationStatus, numOfDiners: number, userEmail: string, createdBy: string, createdByUserEmail?: string | null, tableId: string, table: { __typename?: 'Table', id: string, tableNumber: number, areaId: string, reserved: boolean, specialRequests: Array<string> }, user: { __typename?: 'User', profile?: { __typename?: 'Profile', name?: string | null, phone?: string | null } | null } }> };
+
+export type AddReservationMutationVariables = Exact<{
+  userEmail: Scalars['String']['input'];
+  tableId: Scalars['String']['input'];
+  numOfDiners: Scalars['Int']['input'];
+  reservationTime: Scalars['DateTime']['input'];
+  createdBy: Role;
+  createdByUserEmail?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type AddReservationMutation = { __typename?: 'Mutation', addReservation: { __typename?: 'Reservation', id: string } };
+
+export type EditReservationMutationVariables = Exact<{
+  editReservationId: Scalars['String']['input'];
+  status?: InputMaybe<ReservationStatus>;
+  reservationTime?: InputMaybe<Scalars['DateTime']['input']>;
+  numOfDiners?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type EditReservationMutation = { __typename?: 'Mutation', editReservation: { __typename?: 'Reservation', id: string, status: ReservationStatus, updatedAt: any } };
+
+export type CancelReservationMutationVariables = Exact<{
+  cancelReservationId: Scalars['String']['input'];
+}>;
+
+
+export type CancelReservationMutation = { __typename?: 'Mutation', cancelReservation: { __typename?: 'Reservation', id: string, status: ReservationStatus, updatedAt: any } };
+
+export type CompleteReservationMutationVariables = Exact<{
+  completeReservationId: Scalars['String']['input'];
+}>;
+
+
+export type CompleteReservationMutation = { __typename?: 'Mutation', completeReservation: { __typename?: 'Reservation', id: string, status: ReservationStatus, updatedAt: any } };
 
 export type GetAvailableTablesQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -1245,6 +1342,11 @@ export type EditProfileMutationVariables = Exact<{
 
 
 export type EditProfileMutation = { __typename?: 'Mutation', editProfile: { __typename?: 'Profile', id: string } };
+
+export type GetUsersQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetUsersQuery = { __typename?: 'Query', getUsers: Array<{ __typename?: 'User', id: string, email?: string | null, name?: string | null, role: Role, profile?: { __typename?: 'Profile', name?: string | null, phone?: string | null } | null }> };
 
 
 export const GetAreaDocument = gql`
@@ -1484,6 +1586,116 @@ export const GetMenuUserFavoritesDocument = gql`
 export function useGetMenuUserFavoritesQuery(options: Omit<Urql.UseQueryArgs<GetMenuUserFavoritesQueryVariables>, 'query'>) {
   return Urql.useQuery<GetMenuUserFavoritesQuery, GetMenuUserFavoritesQueryVariables>({ query: GetMenuUserFavoritesDocument, ...options });
 };
+export const GetNotificationsDocument = gql`
+    query GetNotifications {
+  getNotifications {
+    id
+    type
+    message
+    priority
+    status
+    userEmail
+    createdAt
+    updatedAt
+    user {
+      id
+      email
+      name
+      role
+    }
+  }
+}
+    `;
+
+export function useGetNotificationsQuery(options?: Omit<Urql.UseQueryArgs<GetNotificationsQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetNotificationsQuery, GetNotificationsQueryVariables>({ query: GetNotificationsDocument, ...options });
+};
+export const GetUserNotificationsDocument = gql`
+    query GetUserNotifications($userEmail: String!) {
+  getUserNotifications(userEmail: $userEmail) {
+    id
+    type
+    message
+    priority
+    status
+    userEmail
+    createdAt
+    updatedAt
+    user {
+      id
+      email
+      name
+      role
+    }
+  }
+}
+    `;
+
+export function useGetUserNotificationsQuery(options: Omit<Urql.UseQueryArgs<GetUserNotificationsQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetUserNotificationsQuery, GetUserNotificationsQueryVariables>({ query: GetUserNotificationsDocument, ...options });
+};
+export const AddNotificationDocument = gql`
+    mutation AddNotification($message: String!, $type: String!, $userEmail: String!, $priority: NotificationPriority, $status: NotificationStatus) {
+  addNotification(
+    message: $message
+    type: $type
+    userEmail: $userEmail
+    priority: $priority
+    status: $status
+  ) {
+    id
+    createdAt
+  }
+}
+    `;
+
+export function useAddNotificationMutation() {
+  return Urql.useMutation<AddNotificationMutation, AddNotificationMutationVariables>(AddNotificationDocument);
+};
+export const UpdateNotificationDocument = gql`
+    mutation UpdateNotification($updateNotificationId: String!, $message: String, $priority: NotificationPriority, $status: NotificationStatus) {
+  updateNotification(
+    id: $updateNotificationId
+    message: $message
+    priority: $priority
+    status: $status
+  ) {
+    id
+    message
+    priority
+    status
+    updatedAt
+  }
+}
+    `;
+
+export function useUpdateNotificationMutation() {
+  return Urql.useMutation<UpdateNotificationMutation, UpdateNotificationMutationVariables>(UpdateNotificationDocument);
+};
+export const MarkNotificationAsReadDocument = gql`
+    mutation MarkNotificationAsRead($markNotificationAsReadId: String!) {
+  markNotificationAsRead(id: $markNotificationAsReadId) {
+    id
+    status
+    updatedAt
+  }
+}
+    `;
+
+export function useMarkNotificationAsReadMutation() {
+  return Urql.useMutation<MarkNotificationAsReadMutation, MarkNotificationAsReadMutationVariables>(MarkNotificationAsReadDocument);
+};
+export const DeleteNotificationDocument = gql`
+    mutation DeleteNotification($deleteNotificationId: String!) {
+  deleteNotification(id: $deleteNotificationId) {
+    id
+  }
+}
+    `;
+
+export function useDeleteNotificationMutation() {
+  return Urql.useMutation<DeleteNotificationMutation, DeleteNotificationMutationVariables>(DeleteNotificationDocument);
+};
 export const GetOrdersDocument = gql`
     query GetOrders($first: Int, $after: ID) {
   getOrders(first: $first, after: $after) {
@@ -1565,6 +1777,131 @@ export const EditOrderDocument = gql`
 
 export function useEditOrderMutation() {
   return Urql.useMutation<EditOrderMutation, EditOrderMutationVariables>(EditOrderDocument);
+};
+export const GetReservationDocument = gql`
+    query GetReservation($getReservationId: String!) {
+  getReservation(id: $getReservationId) {
+    id
+    status
+    reservationTime
+    numOfDiners
+    userEmail
+    createdBy
+    createdAt
+    updatedAt
+    tableId
+    table {
+      id
+      tableNumber
+      areaId
+      reserved
+      specialRequests
+    }
+    user {
+      profile {
+        name
+        phone
+      }
+    }
+  }
+}
+    `;
+
+export function useGetReservationQuery(options: Omit<Urql.UseQueryArgs<GetReservationQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetReservationQuery, GetReservationQueryVariables>({ query: GetReservationDocument, ...options });
+};
+export const GetReservationsDocument = gql`
+    query GetReservations($status: ReservationStatus) {
+  getReservations(status: $status) {
+    id
+    reservationTime
+    status
+    numOfDiners
+    userEmail
+    createdBy
+    createdByUserEmail
+    tableId
+    table {
+      id
+      tableNumber
+      areaId
+      reserved
+      specialRequests
+    }
+    user {
+      profile {
+        name
+        phone
+      }
+    }
+  }
+}
+    `;
+
+export function useGetReservationsQuery(options?: Omit<Urql.UseQueryArgs<GetReservationsQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetReservationsQuery, GetReservationsQueryVariables>({ query: GetReservationsDocument, ...options });
+};
+export const AddReservationDocument = gql`
+    mutation AddReservation($userEmail: String!, $tableId: String!, $numOfDiners: Int!, $reservationTime: DateTime!, $createdBy: Role!, $createdByUserEmail: String) {
+  addReservation(
+    userEmail: $userEmail
+    tableId: $tableId
+    numOfDiners: $numOfDiners
+    reservationTime: $reservationTime
+    createdBy: $createdBy
+    createdByUserEmail: $createdByUserEmail
+  ) {
+    id
+  }
+}
+    `;
+
+export function useAddReservationMutation() {
+  return Urql.useMutation<AddReservationMutation, AddReservationMutationVariables>(AddReservationDocument);
+};
+export const EditReservationDocument = gql`
+    mutation EditReservation($editReservationId: String!, $status: ReservationStatus, $reservationTime: DateTime, $numOfDiners: Int) {
+  editReservation(
+    id: $editReservationId
+    status: $status
+    reservationTime: $reservationTime
+    numOfDiners: $numOfDiners
+  ) {
+    id
+    status
+    updatedAt
+  }
+}
+    `;
+
+export function useEditReservationMutation() {
+  return Urql.useMutation<EditReservationMutation, EditReservationMutationVariables>(EditReservationDocument);
+};
+export const CancelReservationDocument = gql`
+    mutation CancelReservation($cancelReservationId: String!) {
+  cancelReservation(id: $cancelReservationId) {
+    id
+    status
+    updatedAt
+  }
+}
+    `;
+
+export function useCancelReservationMutation() {
+  return Urql.useMutation<CancelReservationMutation, CancelReservationMutationVariables>(CancelReservationDocument);
+};
+export const CompleteReservationDocument = gql`
+    mutation CompleteReservation($completeReservationId: String!) {
+  completeReservation(id: $completeReservationId) {
+    id
+    status
+    updatedAt
+  }
+}
+    `;
+
+export function useCompleteReservationMutation() {
+  return Urql.useMutation<CompleteReservationMutation, CompleteReservationMutationVariables>(CompleteReservationDocument);
 };
 export const GetAvailableTablesDocument = gql`
     query GetAvailableTables {
@@ -1854,4 +2191,22 @@ export const EditProfileDocument = gql`
 
 export function useEditProfileMutation() {
   return Urql.useMutation<EditProfileMutation, EditProfileMutationVariables>(EditProfileDocument);
+};
+export const GetUsersDocument = gql`
+    query GetUsers {
+  getUsers {
+    id
+    email
+    name
+    role
+    profile {
+      name
+      phone
+    }
+  }
+}
+    `;
+
+export function useGetUsersQuery(options?: Omit<Urql.UseQueryArgs<GetUsersQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetUsersQuery, GetUsersQueryVariables>({ query: GetUsersDocument, ...options });
 };

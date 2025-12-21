@@ -8,6 +8,8 @@ import ToggleOccupancy from "./Table_Settings/ToggleReservation";
 import RoomBookings from "./Table_Settings/TableReservations";
 import EditRoomModal from "./CRUD_Zone-CRUD_Table/EditTableModal";
 import DeleteRoomModal from "./CRUD_Zone-CRUD_Table/DeleteTableModal";
+import { RoomServiceQuickBtn } from "./Table_Settings/RoomServiceQuickBtn";
+
 
 interface RoomCardProps {
   room: RoomInStore;
@@ -52,6 +54,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ room }) => {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <ToggleOccupancy room={room} />
         <RoomBookings room={room} />
+    <RoomServiceQuickBtn roomId={room.id} roomNumber={room.roomNumber} />
       </div>
 
       {room.notes?.length ? (

@@ -31,12 +31,12 @@ const DashSideBar = ({ show, showSideBar }: Props) => {
               </div>
       <nav className="flex flex-col items-center justify-between h-full   ">
         <div
-          className={`overflow-y-auto pt-20 w-16 scrollbar-hide ${
+          className={`overflow-y-auto pt-4 w-16 scrollbar-hide ${
             show && "md:w-[10rem]"
           } `}
         >
           <div
-            className={`flex flex-col items-center space-y-6 ${
+            className={`flex flex-col items-center space-y-5 ${
               show && "md:items-start"
             } `}
           >

@@ -10,7 +10,7 @@ import {
 import { useMemo } from "react";
 import AuthModal from "./components/Common/AuthModal";
 import { Toaster } from "react-hot-toast";
-
+import { SessionProvider } from "next-auth/react";
 type ProviderProps = {
   children: React.ReactNode;
   graphqlApiKey: string;
@@ -37,11 +37,13 @@ const Providers = ({ children, graphqlApiKey }: ProviderProps) => {
   }, []);
 
   return (
+<SessionProvider>
     <UrqlProvider client={client} ssr={ssr}>
       <Toaster />
       <AuthModal />
       {children}
     </UrqlProvider>
+    </SessionProvider>
   );
 };
 

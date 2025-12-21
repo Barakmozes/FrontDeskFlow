@@ -5,6 +5,7 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { useMutation, useQuery } from "@urql/next";
 import toast from "react-hot-toast";
+import gql from "graphql-tag";
 
 import {
   GetAreasNameDescriptionDocument,
@@ -13,20 +14,23 @@ import {
   GetTablesDocument,
   GetTablesQuery,
   GetTablesQueryVariables,
+  ReservationStatus,
   UpdateManyTablesDocument,
   UpdateManyTablesMutation,
   UpdateManyTablesMutationVariables,
 } from "@/graphql/generated";
 
 import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
+import { useFrontDeskUIStore } from "@/lib/frontDeskUIStore";
 
-import RoomsSection from "./TablesSection";
-import RoomCard from "./TableCard";
+import RoomsSection from "./TablesSection"; // keep layout mechanics intact
+import RoomSummaryCard, { type RoomReservationPreview } from "./RoomSummaryCard";
 
 import AddHotelForm from "./CRUD_Zone-CRUD_Table/AddZoneForm";
 import DeleteHotelModal from "./CRUD_Zone-CRUD_Table/DeleteZoneModal";
 import EditHotelModal from "./CRUD_Zone-CRUD_Table/EditZoneModal";
 import AddRoomModal from "./CRUD_Zone-CRUD_Table/AddTableModal";
+import AddReservationModal from "./CRUD_Reservation/AddReservationModal";
 
 type ListFilter = "ALL" | "AVAILABLE" | "OCCUPIED";
 
@@ -40,11 +44,68 @@ const asIsoString = (value: unknown): string => {
   }
 };
 
+// Convert any DateTime into a local YYYY-MM-DD key.
+// We use local keys because <input type="date"> is local-day based.
+const toLocalDateKey = (value: unknown): string => {
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+/**
+ * Board reservations query:
+ * We intentionally do ONE query and map in memory,
+ * to avoid N queries (one per room).
+ *
+ * Later (Step-2/3) you’ll add backend query like:
+ *   getReservationsByDate(hotelId, from, to)
+ * for performance at scale.
+ */
+const GetReservationsForBoardDocument = gql`
+  query GetReservationsForBoard {
+    getReservations {
+      id
+      tableId
+      reservationTime
+      numOfDiners
+      status
+      userEmail
+      user {
+        profile {
+          name
+          phone
+        }
+      }
+    }
+  }
+`;
+
+type GetReservationsForBoardQuery = {
+  getReservations: Array<{
+    id: string;
+    tableId: string;
+    reservationTime: string;
+    numOfDiners: number;
+    status: ReservationStatus;
+    userEmail: string;
+    user: {
+      profile: null | {
+        name: string | null;
+        phone: string | null;
+      };
+    };
+  }>;
+};
+
 /**
  * HotelLayout
  * Client-side mapping only:
  *  - Backend Area  => Hotel
  *  - Backend Table => Room
+ *  - Backend Reservation => Booking (day-level for now)
  */
 const HotelLayout = () => {
   const [listFilter, setListFilter] = useState<ListFilter>("ALL");
@@ -62,15 +123,20 @@ const HotelLayout = () => {
     adjustScale,
   } = useHotelStore();
 
+  // Global UI state for board date + modal
+  const selectedDate = useFrontDeskUIStore((s) => s.selectedDate);
+  const setSelectedDate = useFrontDeskUIStore((s) => s.setSelectedDate);
+  const reservationModal = useFrontDeskUIStore((s) => s.reservationModal);
+  const closeReservationModal = useFrontDeskUIStore((s) => s.closeReservationModal);
+
   // ---- Fetch hotels (areas) ----
-  const [
-    { data: hotelsData, fetching: hotelsFetching, error: hotelsError },
-  ] = useQuery<GetAreasNameDescriptionQuery, GetAreasNameDescriptionQueryVariables>({
-    query: GetAreasNameDescriptionDocument,
-    variables: {
-      orderBy: { createdAt: "asc" as any },
-    },
-  });
+  const [{ data: hotelsData, fetching: hotelsFetching, error: hotelsError }] =
+    useQuery<GetAreasNameDescriptionQuery, GetAreasNameDescriptionQueryVariables>({
+      query: GetAreasNameDescriptionDocument,
+      variables: {
+        orderBy: { createdAt: "asc" as any },
+      },
+    });
 
   useEffect(() => {
     const fetched = hotelsData?.getAreasNameDescription;
@@ -87,13 +153,11 @@ const HotelLayout = () => {
   }, [hotelsData, setHotels]);
 
   // ---- Fetch rooms (tables) ----
-  const [
-    { data: roomsData, fetching: roomsFetching, error: roomsError },
-    reexecuteRoomsQuery,
-  ] = useQuery<GetTablesQuery, GetTablesQueryVariables>({
-    query: GetTablesDocument,
-    variables: {},
-  });
+  const [{ data: roomsData, fetching: roomsFetching, error: roomsError }, reexecuteRoomsQuery] =
+    useQuery<GetTablesQuery, GetTablesQueryVariables>({
+      query: GetTablesDocument,
+      variables: {},
+    });
 
   useEffect(() => {
     const fetched = roomsData?.getTables;
@@ -114,6 +178,53 @@ const HotelLayout = () => {
 
     setRooms(mapped);
   }, [roomsData, setRooms]);
+
+  // ---- Fetch reservations for board (one query) ----
+  const [{ data: reservationsData, fetching: reservationsFetching, error: reservationsError }, reexecuteReservations] =
+    useQuery<GetReservationsForBoardQuery>({
+      query: GetReservationsForBoardDocument,
+      variables: {},
+      requestPolicy: "cache-first",
+    });
+
+  // Build a map: roomId -> reservations for the selected board date
+  const reservationsByRoomForDate = useMemo(() => {
+    const map = new Map<string, RoomReservationPreview[]>();
+
+    const all = reservationsData?.getReservations ?? [];
+    for (const r of all) {
+      // For board: ignore cancelled/completed
+      if (r.status === ReservationStatus.Cancelled || r.status === ReservationStatus.Completed) continue;
+
+      // Only keep reservations matching selected board date
+      if (toLocalDateKey(r.reservationTime) !== selectedDate) continue;
+
+      const entry: RoomReservationPreview = {
+        id: r.id,
+        reservationTime: r.reservationTime,
+        status: r.status,
+        numOfDiners: r.numOfDiners,
+        guestEmail: r.userEmail,
+        guestName: r.user.profile?.name ?? null,
+        guestPhone: r.user.profile?.phone ?? null,
+      };
+
+      const list = map.get(r.tableId) ?? [];
+      list.push(entry);
+      map.set(r.tableId, list);
+    }
+
+    // Sort each room’s reservations by time for stable UI
+map.forEach((list, roomId) => {
+  list.sort(
+    (a, b) =>
+      new Date(a.reservationTime).getTime() -
+      new Date(b.reservationTime).getTime()
+  );
+});
+
+    return map;
+  }, [reservationsData, selectedDate]);
 
   // ---- Bulk save (layout positions) ----
   const [{ fetching: savingLayout }, updateManyRooms] = useMutation<
@@ -154,7 +265,10 @@ const HotelLayout = () => {
   // ---- Derived room sets ----
   const selectedHotelRooms = useMemo(() => {
     if (!selectedHotel) return [];
-    return rooms.filter((r) => r.hotelId === selectedHotel.id);
+    return rooms
+      .filter((r) => r.hotelId === selectedHotel.id)
+      .slice()
+      .sort((a, b) => a.roomNumber - b.roomNumber);
   }, [rooms, selectedHotel]);
 
   const roomsForList = useMemo(() => {
@@ -183,8 +297,19 @@ const HotelLayout = () => {
     setSelectedHotel(hotelId);
   };
 
+  // Resolve selected room for modal
+  const modalRoom = useMemo(() => {
+    if (!reservationModal.roomId) return null;
+    return rooms.find((r) => r.id === reservationModal.roomId) ?? null;
+  }, [reservationModal.roomId, rooms]);
+
+  const modalExistingReservations = useMemo(() => {
+    if (!modalRoom) return [];
+    return reservationsByRoomForDate.get(modalRoom.id) ?? [];
+  }, [modalRoom, reservationsByRoomForDate]);
+
   // ---- Render ----
-  const isLoading = hotelsFetching || roomsFetching;
+  const isLoading = hotelsFetching || roomsFetching || reservationsFetching;
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -204,6 +329,17 @@ const HotelLayout = () => {
           </div>
 
           <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
+            {/* Board date */}
+            <div className="flex items-center gap-2 bg-gray-50 border rounded-lg px-2 py-1">
+              <span className="text-xs text-gray-600">Board date</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="text-xs bg-transparent outline-none"
+              />
+            </div>
+
             <button
               type="button"
               onClick={clearSelectedHotel}
@@ -277,24 +413,48 @@ const HotelLayout = () => {
         </div>
 
         {/* Loading & errors */}
-        {isLoading ? (
-          <p className="text-sm text-gray-500 mb-2">Loading…</p>
-        ) : null}
+        {isLoading ? <p className="text-sm text-gray-500 mb-2">Loading…</p> : null}
 
-        {hotelsError || roomsError ? (
+        {hotelsError || roomsError || reservationsError ? (
           <p className="text-sm text-red-600 mb-2">
-            Failed to load data: {(hotelsError || roomsError)?.message}
+            Failed to load data: {(hotelsError || roomsError || reservationsError)?.message}
           </p>
         ) : null}
 
         {/* Content */}
         {selectedHotel ? (
-          <RoomsSection
-            hotel={selectedHotel}
-            rooms={selectedHotelRooms}
-            scale={scale}
-            moveRoom={moveRoom}
-          />
+          <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
+            {/* Keep your existing DnD layout section intact */}
+            <RoomsSection hotel={selectedHotel} rooms={selectedHotelRooms} scale={scale} moveRoom={moveRoom} />
+
+            {/* Front-desk side panel (fast + clear) */}
+            <aside className="bg-white rounded-lg shadow-md p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-800">
+                  Rooms • {selectedDate}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => reexecuteReservations({ requestPolicy: "network-only" })}
+                  className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[72vh] overflow-auto pr-1">
+                {selectedHotelRooms.map((room) => (
+                  <RoomSummaryCard
+                    key={room.id}
+                    room={room}
+                    dateKey={selectedDate}
+                    reservationsForDate={reservationsByRoomForDate.get(room.id) ?? []}
+                    compact
+                  />
+                ))}
+              </div>
+            </aside>
+          </div>
         ) : hotels.length === 0 ? (
           <div className="text-center text-gray-500 mt-12">
             <p className="text-lg font-medium">
@@ -304,23 +464,25 @@ const HotelLayout = () => {
         ) : (
           <div className="grid gap-6">
             {hotels.map((hotel) => {
-              const hotelRooms = roomsForList.filter((r) => r.hotelId === hotel.id);
+              const hotelRooms = roomsForList
+                .filter((r) => r.hotelId === hotel.id)
+                .slice()
+                .sort((a, b) => a.roomNumber - b.roomNumber);
 
               const total = rooms.filter((r) => r.hotelId === hotel.id).length;
-              const available = rooms.filter(
-                (r) => r.hotelId === hotel.id && !r.isOccupied
-              ).length;
+              const available = rooms.filter((r) => r.hotelId === hotel.id && !r.isOccupied).length;
               const occupied = total - available;
 
               return (
                 <div key={hotel.id} className="border rounded-lg p-4 bg-white">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        {hotel.name}
-                      </h3>
+                      <h3 className="text-lg font-semibold text-gray-800">{hotel.name}</h3>
                       <p className="text-xs text-gray-500">
                         Rooms: {total} • Available: {available} • Occupied: {occupied}
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Board date: <span className="font-medium text-gray-600">{selectedDate}</span>
                       </p>
                     </div>
 
@@ -338,7 +500,12 @@ const HotelLayout = () => {
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                       {hotelRooms.map((room) => (
-                        <RoomCard key={room.id} room={room} />
+                        <RoomSummaryCard
+                          key={room.id}
+                          room={room}
+                          dateKey={selectedDate}
+                          reservationsForDate={reservationsByRoomForDate.get(room.id) ?? []}
+                        />
                       ))}
                     </div>
                   )}
@@ -347,6 +514,16 @@ const HotelLayout = () => {
             })}
           </div>
         )}
+
+        {/* Booking modal (mounted once, driven by global UI store) */}
+        <AddReservationModal
+          open={reservationModal.isOpen}
+          onClose={closeReservationModal}
+          room={modalRoom}
+          dateKey={selectedDate}
+          existingReservationsForDate={modalExistingReservations}
+          onCreated={() => reexecuteReservations({ requestPolicy: "network-only" })}
+        />
       </div>
     </DndProvider>
   );

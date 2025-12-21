@@ -62,3 +62,10 @@ query GetAreasNameDescription($orderBy: AreaOrderByInput) {
     name
   }
 }
+
+
+
+
+# /..npov
+
+
