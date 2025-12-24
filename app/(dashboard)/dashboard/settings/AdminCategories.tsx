@@ -1,72 +1,84 @@
 "use client";
 
-import Image from "next/image";
+import React from "react";
+import { useQuery } from "@urql/next";
 
 import AdminAddCategory from "./AdminAddCategory";
 import AdminEditCategory from "./AdminEditCategory";
 import AdminDeleteCategory from "./AdminDeleteCategory";
 
-import { categoriesData } from "@/data/categories-data";
-import { Category } from "@prisma/client";
+import { GetCategoriesDocument, GetCategoriesQuery } from "@/graphql/generated";
 
-const AdminCategories = () => {
+export default function AdminCategories() {
+  const [{ data, fetching, error }, reexecute] = useQuery<GetCategoriesQuery>({
+    query: GetCategoriesDocument,
+    requestPolicy: "cache-first",
+  });
+
+  const categories = data?.getCategories ?? [];
+
   return (
-    <>
-      <div className="flex items-center justify-around ">
-        <h2 className="text-2xl py-4 leading-tight tracking-tight text-gray-600 ">
-          Categories
-        </h2>
-        <AdminAddCategory />
+    <section className="rounded-xl border bg-white shadow-sm">
+      <div className="border-b px-5 py-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Menu Categories</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Used in restaurant + room service menus.
+          </p>
+        </div>
+
+        <AdminAddCategory
+          onChanged={() => reexecute({ requestPolicy: "network-only" })}
+        />
       </div>
-      <table className="w-full    text-left  text-slate-500 ">
-        <thead className=" text-xs  overflow-x-auto whitespace-nowrap text-slate-700 uppercase bg-slate-100  ">
-          <tr>
-            <th scope="col" className="px-6 py-3">
-              Image
-            </th>
 
-            <th scope="col" className="px-6 py-3">
-              Title
-            </th>
-            <th scope="col" className="px-6 py-3">
-              Description
-            </th>
+      <div className="p-5">
+        {fetching ? <p className="text-sm text-gray-500">Loading…</p> : null}
+        {error ? <p className="text-sm text-red-600">Error: {error.message}</p> : null}
 
-            <th scope="col" className="px-6 py-3">
-              Edit
-            </th>
-            <th scope="col" className="px-6 py-3">
-              Delete
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {categoriesData?.map((cat) => (
-            <tr className="bg-white " key={cat.id}>
-              <td className="px-6 py-2">
-                <Image
-                  src={cat.imageSrc}
-                  width={50}
-                  height={50}
-                  alt="avatar"
-                  className="rounded-md object-cover"
-                />
-              </td>
-              <td className="px-6 py-2">{cat.title} </td>
-              <td className="px-6 py-2">{cat.desc}</td>
-
-              <td className="px-6 py-2 whitespace-nowrap">
-                <AdminEditCategory cat={cat as unknown as Category} />
-              </td>
-              <td className="px-6 py-2 whitespace-nowrap">
-                <AdminDeleteCategory  />
-              </td>
-            </tr>
-          ))}
-        </tbody> 
-      </table>
-    </>
+        {categories.length === 0 ? (
+          <p className="text-sm text-gray-500">No categories yet.</p>
+        ) : (
+          <div className="overflow-auto rounded-lg border">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-left">
+                <tr>
+                  <th className="px-4 py-3 font-semibold text-gray-700">Image</th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">Title</th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">Description</th>
+                  <th className="px-4 py-3 font-semibold text-gray-700 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {categories.map((c) => (
+                  <tr key={c.id}>
+                    <td className="px-4 py-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={c.img}
+                        alt={c.title}
+                        className="h-10 w-10 rounded-md border object-cover"
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{c.title}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.desc}</td>
+                    <td className="px-4 py-3 text-right space-x-2">
+                      <AdminEditCategory
+                        category={c}
+                        onChanged={() => reexecute({ requestPolicy: "network-only" })}
+                      />
+                      <AdminDeleteCategory
+                        category={c}
+                        onChanged={() => reexecute({ requestPolicy: "network-only" })}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
   );
-};
-
-export default AdminCategories;
+}

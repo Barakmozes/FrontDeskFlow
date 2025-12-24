@@ -114,6 +114,7 @@ export type Mutation = {
   deleteGridConfig: GridConfig;
   deleteMenu: Menu;
   deleteNotification: Notification;
+  deleteOrder: Order;
   deleteRestaurant: Restaurant;
   deleteTable: Table;
   deleteTableUsage: TableUsage;
@@ -318,6 +319,11 @@ export type MutationDeleteMenuArgs = {
 
 
 export type MutationDeleteNotificationArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type MutationDeleteOrderArgs = {
   id: Scalars['String']['input'];
 };
 
@@ -855,12 +861,15 @@ export type Restaurant = {
   updatedAt: Scalars['DateTime']['output'];
 };
 
-/** User roles in the system */
+/** User roles in the system (hotel roles + legacy roles during migration) */
 export enum Role {
+  Accounting = 'ACCOUNTING',
   Admin = 'ADMIN',
   Chef = 'CHEF',
   Delivery = 'DELIVERY',
+  Housekeeping = 'HOUSEKEEPING',
   Manager = 'MANAGER',
+  Reception = 'RECEPTION',
   User = 'USER',
   Waiter = 'WAITER'
 }
@@ -959,7 +968,7 @@ export type GetAreaQuery = { __typename?: 'Query', getArea: { __typename?: 'Area
 export type GetAreasQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetAreasQuery = { __typename?: 'Query', getAreas: Array<{ __typename?: 'Area', updatedAt: any, name: string, id: string, floorPlanImage?: string | null, description?: string | null, tables: Array<{ __typename?: 'Table', diners: number, id: string, position: any, reserved: boolean, specialRequests: Array<string>, tableNumber: number }> }> };
+export type GetAreasQuery = { __typename?: 'Query', getAreas: Array<{ __typename?: 'Area', updatedAt: any, createdAt: any, name: string, id: string, floorPlanImage?: string | null, description?: string | null, tables: Array<{ __typename?: 'Table', diners: number, id: string, position: any, reserved: boolean, specialRequests: Array<string>, tableNumber: number }> }> };
 
 export type AddAreaMutationVariables = Exact<{
   name: Scalars['String']['input'];
@@ -992,6 +1001,37 @@ export type GetAreasNameDescriptionQueryVariables = Exact<{
 
 
 export type GetAreasNameDescriptionQuery = { __typename?: 'Query', getAreasNameDescription: Array<{ __typename?: 'BasicArea', createdAt: any, floorPlanImage?: string | null, id: string, name: string }> };
+
+export type GetCategoriesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetCategoriesQuery = { __typename?: 'Query', getCategories: Array<{ __typename?: 'Category', id: string, title: string, desc: string, img: string }> };
+
+export type AddCategoryMutationVariables = Exact<{
+  title: Scalars['String']['input'];
+  desc: Scalars['String']['input'];
+  img: Scalars['String']['input'];
+}>;
+
+
+export type AddCategoryMutation = { __typename?: 'Mutation', addCategory: { __typename?: 'Category', id: string } };
+
+export type EditCategoryMutationVariables = Exact<{
+  editCategoryId: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+  desc: Scalars['String']['input'];
+  img: Scalars['String']['input'];
+}>;
+
+
+export type EditCategoryMutation = { __typename?: 'Mutation', editCategory: { __typename?: 'Category', id: string } };
+
+export type DeleteCategoryMutationVariables = Exact<{
+  deleteCategoryId: Scalars['String']['input'];
+}>;
+
+
+export type DeleteCategoryMutation = { __typename?: 'Mutation', deleteCategory: { __typename?: 'Category', id: string } };
 
 export type GetUserFavoritesQueryVariables = Exact<{
   userEmail: Scalars['String']['input'];
@@ -1121,33 +1161,21 @@ export type GetOrdersQueryVariables = Exact<{
 }>;
 
 
-export type GetOrdersQuery = { __typename?: 'Query', getOrders: { __typename?: 'QueryGetOrdersConnection', pageInfo: { __typename?: 'PageInfo', endCursor?: string | null, hasNextPage: boolean }, edges: Array<{ __typename?: 'QueryGetOrdersConnectionEdge', cursor: string, node: { __typename?: 'Order', cart: any, deliveryAddress: string, deliveryFee: number, deliveryTime?: any | null, discount?: number | null, id: string, note?: string | null, orderDate: any, orderNumber: string, paid: boolean, paymentToken?: string | null, serviceFee: number, status: OrderStatus, total: number, userEmail: string, userName: string, userPhone: string } } | null> } };
+export type GetOrdersQuery = { __typename?: 'Query', getOrders: { __typename?: 'QueryGetOrdersConnection', pageInfo: { __typename?: 'PageInfo', endCursor?: string | null, hasNextPage: boolean }, edges: Array<{ __typename?: 'QueryGetOrdersConnectionEdge', cursor: string, node: { __typename?: 'Order', id: string, orderNumber: string, orderDate: any, createdAt: any, updatedAt: any, status: OrderStatus, paid: boolean, paymentToken?: string | null, total: number, serviceFee: number, deliveryFee: number, discount?: number | null, note?: string | null, deliveryAddress: string, tableId?: string | null, userEmail: string, userName: string, userPhone: string } } | null> } };
 
-export type AddOrderMutationVariables = Exact<{
-  cart: Scalars['JSON']['input'];
-  deliveryAddress: Scalars['String']['input'];
-  deliveryFee: Scalars['Float']['input'];
-  orderNumber: Scalars['String']['input'];
-  serviceFee: Scalars['Float']['input'];
-  total: Scalars['Float']['input'];
-  userEmail: Scalars['String']['input'];
-  userName: Scalars['String']['input'];
-  userPhone: Scalars['String']['input'];
-  discount?: InputMaybe<Scalars['Float']['input']>;
-  note?: InputMaybe<Scalars['String']['input']>;
-  paymentToken?: InputMaybe<Scalars['String']['input']>;
+export type GetOrderQueryVariables = Exact<{
+  getOrderId: Scalars['String']['input'];
 }>;
 
 
-export type AddOrderMutation = { __typename?: 'Mutation', addOrder: { __typename?: 'Order', id: string } };
+export type GetOrderQuery = { __typename?: 'Query', getOrder: { __typename?: 'Order', id: string, userName: string, userEmail: string, userPhone: string, orderNumber: string, orderDate: any, status: OrderStatus, cart: any, total: number, paid: boolean, paymentToken?: string | null, discount?: number | null, serviceFee: number, deliveryAddress: string, deliveryTime?: any | null, note?: string | null, tableId?: string | null, createdAt: any, updatedAt: any } };
 
-export type EditOrderOnPaymentMutationVariables = Exact<{
-  editOrderOnPaymentId: Scalars['String']['input'];
-  paymentToken?: InputMaybe<Scalars['String']['input']>;
+export type DeleteOrderMutationVariables = Exact<{
+  deleteOrderId: Scalars['String']['input'];
 }>;
 
 
-export type EditOrderOnPaymentMutation = { __typename?: 'Mutation', editOrderOnPayment: { __typename?: 'Order', id: string } };
+export type DeleteOrderMutation = { __typename?: 'Mutation', deleteOrder: { __typename?: 'Order', id: string } };
 
 export type EditOrderMutationVariables = Exact<{
   editOrderId: Scalars['String']['input'];
@@ -1157,6 +1185,32 @@ export type EditOrderMutationVariables = Exact<{
 
 
 export type EditOrderMutation = { __typename?: 'Mutation', editOrder: { __typename?: 'Order', id: string } };
+
+export type AddOrderMutationVariables = Exact<{
+  cart: Scalars['JSON']['input'];
+  deliveryAddress: Scalars['String']['input'];
+  deliveryFee: Scalars['Float']['input'];
+  discount?: InputMaybe<Scalars['Float']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
+  orderNumber: Scalars['String']['input'];
+  paymentToken?: InputMaybe<Scalars['String']['input']>;
+  serviceFee: Scalars['Float']['input'];
+  total: Scalars['Float']['input'];
+  userEmail: Scalars['String']['input'];
+  userName: Scalars['String']['input'];
+  userPhone: Scalars['String']['input'];
+}>;
+
+
+export type AddOrderMutation = { __typename?: 'Mutation', addOrder: { __typename?: 'Order', id: string, createdAt: any, userName: string, userEmail: string, userPhone: string, orderNumber: string, orderDate: any, status: OrderStatus, cart: any, total: number, paid: boolean, deliveryAddress: string, deliveryFee: number, deliveryTime?: any | null, note?: string | null, discount?: number | null, serviceFee: number, paymentToken?: string | null, tableId?: string | null } };
+
+export type EditOrderOnPaymentMutationVariables = Exact<{
+  editOrderOnPaymentId: Scalars['String']['input'];
+  paymentToken?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type EditOrderOnPaymentMutation = { __typename?: 'Mutation', editOrderOnPayment: { __typename?: 'Order', id: string } };
 
 export type GetReservationQueryVariables = Exact<{
   getReservationId: Scalars['String']['input'];
@@ -1376,6 +1430,7 @@ export const GetAreasDocument = gql`
     query GetAreas {
   getAreas {
     updatedAt
+    createdAt
     name
     id
     floorPlanImage
@@ -1447,6 +1502,53 @@ export const GetAreasNameDescriptionDocument = gql`
 
 export function useGetAreasNameDescriptionQuery(options?: Omit<Urql.UseQueryArgs<GetAreasNameDescriptionQueryVariables>, 'query'>) {
   return Urql.useQuery<GetAreasNameDescriptionQuery, GetAreasNameDescriptionQueryVariables>({ query: GetAreasNameDescriptionDocument, ...options });
+};
+export const GetCategoriesDocument = gql`
+    query GetCategories {
+  getCategories {
+    id
+    title
+    desc
+    img
+  }
+}
+    `;
+
+export function useGetCategoriesQuery(options?: Omit<Urql.UseQueryArgs<GetCategoriesQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetCategoriesQuery, GetCategoriesQueryVariables>({ query: GetCategoriesDocument, ...options });
+};
+export const AddCategoryDocument = gql`
+    mutation AddCategory($title: String!, $desc: String!, $img: String!) {
+  addCategory(title: $title, desc: $desc, img: $img) {
+    id
+  }
+}
+    `;
+
+export function useAddCategoryMutation() {
+  return Urql.useMutation<AddCategoryMutation, AddCategoryMutationVariables>(AddCategoryDocument);
+};
+export const EditCategoryDocument = gql`
+    mutation EditCategory($editCategoryId: String!, $title: String!, $desc: String!, $img: String!) {
+  editCategory(id: $editCategoryId, title: $title, desc: $desc, img: $img) {
+    id
+  }
+}
+    `;
+
+export function useEditCategoryMutation() {
+  return Urql.useMutation<EditCategoryMutation, EditCategoryMutationVariables>(EditCategoryDocument);
+};
+export const DeleteCategoryDocument = gql`
+    mutation DeleteCategory($deleteCategoryId: String!) {
+  deleteCategory(id: $deleteCategoryId) {
+    id
+  }
+}
+    `;
+
+export function useDeleteCategoryMutation() {
+  return Urql.useMutation<DeleteCategoryMutation, DeleteCategoryMutationVariables>(DeleteCategoryDocument);
 };
 export const GetUserFavoritesDocument = gql`
     query GetUserFavorites($userEmail: String!) {
@@ -1706,20 +1808,21 @@ export const GetOrdersDocument = gql`
     edges {
       cursor
       node {
-        cart
-        deliveryAddress
-        deliveryFee
-        deliveryTime
-        discount
         id
-        note
-        orderDate
         orderNumber
+        orderDate
+        createdAt
+        updatedAt
+        status
         paid
         paymentToken
-        serviceFee
-        status
         total
+        serviceFee
+        deliveryFee
+        discount
+        note
+        deliveryAddress
+        tableId
         userEmail
         userName
         userPhone
@@ -1732,23 +1835,92 @@ export const GetOrdersDocument = gql`
 export function useGetOrdersQuery(options?: Omit<Urql.UseQueryArgs<GetOrdersQueryVariables>, 'query'>) {
   return Urql.useQuery<GetOrdersQuery, GetOrdersQueryVariables>({ query: GetOrdersDocument, ...options });
 };
+export const GetOrderDocument = gql`
+    query GetOrder($getOrderId: String!) {
+  getOrder(id: $getOrderId) {
+    id
+    userName
+    userEmail
+    userPhone
+    orderNumber
+    orderDate
+    status
+    cart
+    total
+    paid
+    paymentToken
+    discount
+    serviceFee
+    deliveryAddress
+    deliveryTime
+    note
+    tableId
+    createdAt
+    updatedAt
+  }
+}
+    `;
+
+export function useGetOrderQuery(options: Omit<Urql.UseQueryArgs<GetOrderQueryVariables>, 'query'>) {
+  return Urql.useQuery<GetOrderQuery, GetOrderQueryVariables>({ query: GetOrderDocument, ...options });
+};
+export const DeleteOrderDocument = gql`
+    mutation DeleteOrder($deleteOrderId: String!) {
+  deleteOrder(id: $deleteOrderId) {
+    id
+  }
+}
+    `;
+
+export function useDeleteOrderMutation() {
+  return Urql.useMutation<DeleteOrderMutation, DeleteOrderMutationVariables>(DeleteOrderDocument);
+};
+export const EditOrderDocument = gql`
+    mutation EditOrder($editOrderId: String!, $status: OrderStatus!, $deliveryTime: DateTime) {
+  editOrder(id: $editOrderId, status: $status, deliveryTime: $deliveryTime) {
+    id
+  }
+}
+    `;
+
+export function useEditOrderMutation() {
+  return Urql.useMutation<EditOrderMutation, EditOrderMutationVariables>(EditOrderDocument);
+};
 export const AddOrderDocument = gql`
-    mutation AddOrder($cart: JSON!, $deliveryAddress: String!, $deliveryFee: Float!, $orderNumber: String!, $serviceFee: Float!, $total: Float!, $userEmail: String!, $userName: String!, $userPhone: String!, $discount: Float, $note: String, $paymentToken: String) {
+    mutation AddOrder($cart: JSON!, $deliveryAddress: String!, $deliveryFee: Float!, $discount: Float, $note: String, $orderNumber: String!, $paymentToken: String, $serviceFee: Float!, $total: Float!, $userEmail: String!, $userName: String!, $userPhone: String!) {
   addOrder(
     cart: $cart
     deliveryAddress: $deliveryAddress
     deliveryFee: $deliveryFee
+    discount: $discount
+    note: $note
     orderNumber: $orderNumber
+    paymentToken: $paymentToken
     serviceFee: $serviceFee
     total: $total
     userEmail: $userEmail
     userName: $userName
     userPhone: $userPhone
-    discount: $discount
-    note: $note
-    paymentToken: $paymentToken
   ) {
     id
+    createdAt
+    userName
+    userEmail
+    userPhone
+    orderNumber
+    orderDate
+    status
+    cart
+    total
+    paid
+    deliveryAddress
+    deliveryFee
+    deliveryTime
+    note
+    discount
+    serviceFee
+    paymentToken
+    tableId
   }
 }
     `;
@@ -1766,17 +1938,6 @@ export const EditOrderOnPaymentDocument = gql`
 
 export function useEditOrderOnPaymentMutation() {
   return Urql.useMutation<EditOrderOnPaymentMutation, EditOrderOnPaymentMutationVariables>(EditOrderOnPaymentDocument);
-};
-export const EditOrderDocument = gql`
-    mutation EditOrder($editOrderId: String!, $status: OrderStatus!, $deliveryTime: DateTime) {
-  editOrder(id: $editOrderId, status: $status, deliveryTime: $deliveryTime) {
-    id
-  }
-}
-    `;
-
-export function useEditOrderMutation() {
-  return Urql.useMutation<EditOrderMutation, EditOrderMutationVariables>(EditOrderDocument);
 };
 export const GetReservationDocument = gql`
     query GetReservation($getReservationId: String!) {

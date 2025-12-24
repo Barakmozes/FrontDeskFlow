@@ -53,6 +53,7 @@ import {
   type FolioKind,
   type FolioPayloadV1,
 } from "@/lib/folioEncoding";
+import Link from "next/link";
 
 type ReservationShape = {
   id: string;
@@ -382,6 +383,12 @@ export default function FolioPanel({
         </div>
 
         <div className="flex flex-wrap gap-2">
+             <Link
+      href="/dashboard/reservations"
+      className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200"
+    >
+      ← Back to reservations
+    </Link>
           <button
             onClick={() => openModal("CHARGE")}
             className="text-xs px-3 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-950"
@@ -395,13 +402,14 @@ export default function FolioPanel({
           >
             Record Payment
           </button>
-
-          <button
-            onClick={printInvoice}
-            className="text-xs px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Print Invoice
-          </button>
+<Link
+  href={`/dashboard/folio/${reservation.id}/print`}
+  target="_blank"
+  rel="noopener noreferrer"
+  className="text-xs px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+>
+  Print Invoice
+</Link>
         </div>
       </div>
 

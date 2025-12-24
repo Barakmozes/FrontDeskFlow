@@ -19,8 +19,7 @@ const DashHeader = ({user}: Props) => {
 
         {/* Right Area */}
         <div className="flex items-center justify-end space-x-4">
-          <NotifyDropDown />
-
+         <NotifyDropDown userEmail={user?.email ?? null} />
           <AccountDropDown user={user}/>
         </div>
       </header>

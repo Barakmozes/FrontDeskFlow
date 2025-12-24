@@ -1,2 +1,544 @@
-להעביר לעברית 
-לחשוב על שתי השיטות או להעביר לטיפול מאוחר יותר
+
+https://chatgpt.com/g/g-p-69408a216e748191bddbf6c86a021bcc-frontdeskflow/c/6947210d-f7e0-8333-9b2a-30328d8f7bd1
+Below is the “AI working manual” for FrontDeskFlow: how the project actually works, what you must not change (backend), how we safely add hotel features on top of a restaurant‑shaped schema, and what files/context you should always provide to any AI so it can write correct code without breaking the system.
+
+0) Hard rules (do not break these)
+Backend is frozen
+
+Do not change Prisma schema (no migrations, no new fields).
+
+Do not change the GraphQL server schema/resolvers.
+
+On the frontend, you may add UI pages/components and only use existing GraphQL operations that already exist in graphql/generated.ts (or add .graphql documents only if they map to existing resolvers).
+
+Single source of truth for “hotel logic”
+
+Never implement “stay grouping” twice.
+
+Reception, Operations, Room Board, Folio must derive “stays” from the same utility: @/lib/stayGrouping.
+
+Tag-based configuration is the core mechanic (because backend can’t change)
+
+All hotel “settings” and “extra metadata” is stored as tags in existing fields:
+
+Hotel-level settings: Area.description (string) → parsed by @/lib/hotelSettingsTags
+
+Room-level overrides & housekeeping: Table.specialRequests (string[]) → parsed by @/lib/roomRateTags and @/lib/housekeepingTags
+
+Room revenue: Orders-on-table with a strict note prefix (e.g. FD:ROOM_CHARGE...) → handled by @/lib/folioRoomCharges / @/lib/folioOrders
+
+If you change tag formats, you will break old data and all parsing.
+
+1) The “Hotel dressing” mapping (critical mental model)
+
+This project is a hotel front desk built on a schema that originally fit restaurant flows.
+
+Entities (no backend change)
+
+From schema.prisma (backend reality):
+
+Area = “Hotel” (property / wing / floor / area)
+
+Table = “Room”
+
+Reservation = “Booking night” (one row per night in this phase)
+
+Order = “Charge line” (menu items, room service, and also room revenue lines)
+
+Table.reserved = current occupancy boolean (occupied now)
+
+ReservationStatus = booking lifecycle
+
+Key implication
+
+Because Reservation does not store a date range:
+
+A multi-night “stay” is represented as multiple Reservation rows (one per night).
+
+A “stay” is a client-side abstraction computed by groupReservationsIntoStays().
+
+2) Folder / routing mechanics (where pages live)
+
+Dashboard pages are organized under:
+
+app/(dashboard)/dashboard/... (App Router)
+
+Your shared dashboard shell is a server layout that fetches the user and passes role/email into the wrapper (this is where providers and auth-safe wrappers typically belong). See your dashboard layout pattern in HotelLayout.tsx. 
+
+zone_restaurant
+
+ 
+
+You also have a stable “modules” folder structure that reflects hotel + restaurant features together. 
+
+Folder & File Structure
+
+Standard page pattern
+
+Most dashboard routes follow:
+
+page.tsx (server) → calls getCurrentUser() and passes email/role props
+
+<Module>.client.tsx or <Module>Client.tsx (client) → uses URQL hooks and renders UI
+
+3) URQL mechanics (and the “No client has been specified” crash)
+The crash
+
+You hit:
+
+“No client has been specified using urql’s Provider … at useClient …”
+
+That always means:
+
+You are calling useClient() or useQuery/useMutation in a component tree that is not wrapped in your URQL Provider.
+
+Rule
+
+Any component that uses:
+
+useQuery, useMutation from @urql/next
+
+or useClient() from urql
+
+must be rendered inside:
+
+your URQL Provider component (commonly dashboard/Components/UrqlProvider.tsx or an app-level Provider wrapper)
+
+Where to fix
+
+The most correct place:
+
+In the dashboard layout / wrapper (so every dashboard page automatically has a URQL client).
+
+Your layout already centralizes user/role and the shell wrapper. 
+
+zone_restaurant
+
+AI guidance: before writing code that uses URQL, verify the provider is present in:
+
+app/(dashboard)/dashboard/layout.tsx
+
+or the relevant wrapper component (often DashWrapper)
+
+If it’s missing, add it there (one place), not per-page.
+
+4) Date handling: dateKey is the lingua franca
+Required convention
+
+Use YYYY-MM-DD dateKey everywhere for hotel daily ops.
+
+ 
+
+Why:
+
+Front desk workflows are day-based.
+
+DST/timezones cause subtle bugs if you use raw ISO midnight.
+
+Safe conversion strategy
+
+All date-key conversions should go through your date utils:
+
+todayLocalDateKey()
+
+toLocalDateKey(isoOrDate)
+
+dateKeyToLocalMidday(...) / “local midday” strategy
+
+Rule: never re-implement dateKey math inside pages. Put it in @/lib/dateKey or @/lib/stayGrouping.
+
+5) Stay grouping: the most important utility
+Why it exists
+
+Without backend check-in/out ranges:
+
+A stay = contiguous nightly reservations for the same room + guest.
+
+Rules
+
+Reception and Operations must both:
+
+filter reservations → call groupReservationsIntoStays()
+
+render arrivals/in-house/departures from stay blocks, not raw reservations
+
+“Arrivals” and “In-house” must not overlap (no duplication).
+
+Required exported helpers
+
+Your @/lib/stayGrouping should be treated as authoritative and must export:
+
+groupReservationsIntoStays(reservations)
+
+coversDateKey(stay, dateKey)
+
+folioReservationIdForDateKey(stay, dateKey) (folio is still per reservationId)
+
+todayLocalDateKey()
+
+sumStayGuests(stays)
+
+findStayByReservationId(stays, reservationId) (needed by Folio)
+
+AI rule: do not write a local groupIntoStays() again. Import.
+
+6) Housekeeping mechanics (room readiness & cleaning list)
+
+All housekeeping logic is stored in Table.specialRequests (string[]).
+
+One parser + one patcher
+
+Use only:
+
+parseHousekeepingTags(specialRequests) → returns { hk, notes }
+
+applyHousekeepingPatch(specialRequests, patch) → returns next specialRequests
+
+deriveRoomStatus(reserved, hk) → e.g. OCCUPIED / VACANT_CLEAN / VACANT_DIRTY / MAINTENANCE / OUT_OF_ORDER
+
+Check-in readiness rule
+
+If a room is not VACANT_CLEAN, reception cannot check-in (unless admin/manager override).
+
+Checkout housekeeping rule
+
+When checking out:
+
+mark room vacant (reserved=false)
+
+patch housekeeping:
+
+status: "DIRTY"
+
+inCleaningList: true
+
+This is a key invariant. All checkouts should do it consistently (Folio checkout, Operations quick checkout, etc.).
+
+7) Room pricing and hotel settings (Settings page)
+
+Because backend is frozen, “settings” must be encoded.
+
+Hotel-level pricing & policy
+
+Stored in Area.description
+
+Parsed by: @/lib/hotelSettingsTags (or similarly named)
+
+Updated via EditAreaDocument (GraphQL)
+
+Your Settings UI should let admin configure, per hotel:
+
+baseNightlyRate
+
+currency
+
+autoPostRoomCharges (see revenue below)
+
+checkout policy toggles (requires paid folio, override rules)
+
+optionally check-in/out times if your HotelSettings type supports it
+
+Important: don’t reference fields that don’t exist in HotelSettings (that’s exactly what caused the TS errors you listed). The AI must check HotelSettings type definition and only use those keys.
+
+Room-level override pricing
+
+Stored in Table.specialRequests as “rate tags”
+
+Parsed by: parseRoomRateTags(specialRequests)
+
+Effective nightly rate computed by:
+
+getEffectiveNightlyRate(hotelBase, roomOverride)
+
+How settings changes propagate
+
+Settings changes should only affect:
+
+future check-ins (posting charges)
+
+“post missing charges” tooling in Folio
+
+Do not mutate existing posted charges automatically (that corrupts financial records).
+
+8) Revenue model: Orders are the financial ledger
+The “fastest path” (your chosen approach)
+
+Use the existing Orders system as the folio ledger.
+
+Create “Nightly Room Charge” as a special order:
+
+note starts with a strict prefix (e.g. FD:ROOM_CHARGE)
+
+orderNumber uses a “ROOM” prefix (or ROOM-<reservationId>)
+
+status forced to OrderStatus.Completed to keep it out of kitchen/restaurant flows
+
+The idempotent posting function
+
+Your canonical posting function is:
+
+ensureNightlyRoomCharges({ client, tableId, hotelId, roomNumber, guestEmail, guestName, nightlyRate, nights... })
+
+It must:
+
+Query existing table orders
+
+Detect already posted charges (via note or orderNumber)
+
+Post missing nights only
+
+Force orders to COMPLETED
+
+When to call it
+
+After check-in succeeds, in both Reception and Operations, call:
+
+ensureNightlyRoomCharges(...)
+but only if hotel settings enable autoPostRoomCharges.
+
+This prevents divergence and makes revenue reporting real.
+
+9) Folio policy: checkout requires “paid” unless manager override
+What Folio must enforce
+
+Checkout (complete stay + release room + mark DIRTY) should be blocked unless:
+
+Balance due is 0
+or
+
+Manager/Admin override is enabled
+
+How balance due is computed
+
+Room charges are orders with room-charge tag/prefix
+
+Menu charges are all other orders relevant to the stay
+
+“Paid” is detected by paymentToken (or your existing rule orderIsPaid(order))
+
+Checkout mechanics
+
+When Folio approves checkout:
+
+Complete all reservations for the stay (CompleteReservation)
+
+Release room (ToggleTableReservation reserved=false)
+
+Mark DIRTY + add to cleaning list (UpdateManyTables with patched specialRequests)
+
+Redirect back to Reception
+
+This must match the same policy in Reception and Operations (or explicitly route checkout through Folio).
+
+10) Dashboard metrics and analytics requirements
+What “Dashboard” should compute from now on
+
+Revenue must come from Orders:
+
+Split into:
+
+Room revenue (orders that are room charges)
+
+Menu revenue (everything else)
+
+Support time-buckets for graphs (daily totals)
+
+TotalCards should show:
+
+Total revenue
+
+Room revenue
+
+Menu revenue
+
+Potentially unpaid balance totals (optional KPI)
+
+Avoid double counting
+
+Room charges are orders too—ensure the chart logic doesn’t also include them as menu.
+
+11) Navigation and roles (routes.tsx)
+Why routes need roles
+
+You wanted a simple role field per route so RenderRoutes can hide items without rewriting the sidebar.
+
+ 
+
+Rules:
+
+Backend Role enum is fixed (Prisma enum). You can’t add new role names without backend.
+
+UI access control should map those roles to modules:
+
+e.g. only ADMIN/MANAGER see Settings/Users
+
+Reception/Operations visible to staff roles
+
+etc.
+
+AI instruction
+
+Any AI editing routes must:
+
+preserve route ordering (natural workflow)
+
+add an allowedRoles (array) or minRole field consistently
+
+ensure RenderRoutes checks this field
+
+12) GraphQL/codegen mechanics (how not to break typing)
+What’s authoritative
+
+graphql/generated.ts is the contract of what the backend supports.
+
+Safe workflow
+
+Before writing a query/mutation, search generated.ts to confirm:
+
+the Document exists (e.g. EditAreaDocument)
+
+the return shape has the fields you expect
+
+If you add a .graphql file:
+
+it must match an existing backend resolver
+
+then run codegen to regenerate generated.ts
+
+Common pitfall (you hit it)
+
+Some components referenced GetRestaurantsDocument / EditRestaurantDocument, but GraphQL exports only Area-based operations (e.g. GetAreasDocument, EditAreaDocument).
+AI must always confirm document names from generated.ts.
+
+13) Minimal “operational flow” (the hotel lifecycle)
+
+This is the core “workflow” that all UI must support and stay consistent with:
+
+Create booking
+
+Create 1 reservation per night (bridge model)
+
+ReservationStatus.Pending initially
+
+numOfDiners = guest count
+
+Confirm booking (optional)
+
+Set to Confirmed for all nights if staff confirms
+
+Check-in (today only)
+
+Ensure room readiness from housekeeping tags (vacant clean) unless override
+
+Toggle Table.reserved=true
+
+Set all stay nights to Confirmed (if not already)
+
+If settings allow: auto-post room charges into Folio orders
+
+In-house actions
+
+Room service creates menu orders (already supported)
+
+Folio aggregates all charges
+
+Payment
+
+Mark orders as paid using paymentToken (manual or payment integration)
+
+Checkout
+
+Block if balance due (unless manager override)
+
+Complete all reservations (stay)
+
+Toggle room vacant
+
+Mark room DIRTY + add to cleaning list
+
+Housekeeping
+
+Works from tags; updates specialRequests
+
+14) What you must give any AI to get correct code back
+
+If you want an AI to write correct code without backend changes, always provide these files (or links/pastes), because the AI must verify contracts and tags instead of guessing.
+
+Backend contract artifacts (non-negotiable)
+
+schema.prisma (for model reality)
+
+graphql/generated.ts (for actual operations + types)
+
+Core “hotel logic” libs
+
+lib/stayGrouping.ts
+
+lib/housekeepingTags.ts
+
+lib/hotelSettingsTags.ts
+
+lib/roomRateTags.ts
+
+lib/folioRoomCharges.ts
+
+lib/folioOrders.ts
+
+lib/dateKey.ts (or whatever file holds dateKey conversion helpers)
+
+lib/session.ts (getCurrentUser; auth rules)
+
+Key UI modules (to preserve consistency)
+
+Reception page client (/dashboard/reception/reception.client.tsx)
+
+Operations board (app/components/.../OperationsBoard.tsx)
+
+Folio client (/dashboard/folio/[reservationId]/folio.client.tsx)
+
+Settings components folder (especially pricing/policy)
+
+Dashboard metrics components (TotalCards, SalesRevenueGraph)
+
+Shell/wrappers/providers (to prevent URQL crashes)
+
+app/(dashboard)/dashboard/layout.tsx (dashboard layout pattern) 
+
+zone_restaurant
+
+dashboard/Components/UrqlProvider.tsx (or equivalent)
+
+Any root Providers.tsx used by Next.js layout
+
+Structure map
+
+The folder structure file you shared is useful context for route decisions and placement. 
+
+Folder & File Structure
+
+15) Copy-paste “AI system prompt” you can reuse
+
+If you want, you can paste this into a new AI chat as the “system” or first message (and then attach the files listed above):
+
+You are working on FrontDeskFlow (Next.js 14, App Router, TypeScript, Tailwind, NextAuth, URQL, GraphQL codegen, Prisma).
+Backend is frozen: do not change Prisma schema or GraphQL server.
+Hotels are Areas, Rooms are Tables, multi-night stays are multiple Reservations (one per night).
+All hotel settings are encoded as tags in Area.description; room overrides and housekeeping are tags in Table.specialRequests.
+Folio and revenue use Orders. Room charges are Orders with FD:ROOM_CHARGE note prefix and are force-completed.
+Reception and Operations must both derive stays using @/lib/stayGrouping (single source of truth) to prevent duplication and disagreement.
+Checkout must: require paid folio unless manager override; complete stay reservations; release room; mark DIRTY and add to cleaning list.
+Any code you write must: use existing GraphQL documents from graphql/generated.ts; use URQL hooks only under the URQL Provider; preserve tag formats; and keep UI consistent with existing components.
+
+If you want, paste (or upload) these specific files next, and I can turn this “manual” into a repo-level README.md + CONTRIBUTING.md that you can keep in your project so any AI (or developer) follows the same rules automatically:
+
+lib/stayGrouping.ts
+
+lib/hotelSettingsTags.ts
+
+lib/roomRateTags.ts
+
+lib/housekeepingTags.ts
+
+app/(dashboard)/dashboard/layout.tsx
+
+dashboard/Components/UrqlProvider.tsx

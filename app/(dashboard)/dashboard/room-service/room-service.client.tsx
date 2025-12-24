@@ -86,7 +86,7 @@ export default function RoomServiceClient() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("ALL");
 
-  const [serviceFee, setServiceFee] = useState<number>(0);
+  const [serviceFee, setServiceFee] = useState<number>(3);
   const [discount, setDiscount] = useState<number>(0);
   const [note, setNote] = useState<string>("");
 
@@ -327,7 +327,7 @@ export default function RoomServiceClient() {
     const vars: AddOrderToTableMutationVariables = {
       tableId,
       cart: cartItems ?? [],
-      orderNumber: createOrderNumber("ROOM"),
+      orderNumber: createOrderNumber("ROOM-service"),
       serviceFee: Number.isFinite(serviceFee) ? serviceFee : 0,
       total,
       userEmail: emailToUse,

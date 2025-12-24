@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/folio/[reservationId]/page.tsx
 import { getCurrentUser } from "@/lib/session";
 import FolioClient from "./folio.client";
 

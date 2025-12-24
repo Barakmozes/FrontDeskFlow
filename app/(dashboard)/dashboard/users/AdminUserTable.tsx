@@ -6,7 +6,7 @@ import TableWrapper from "../Components/TableWrapper";
 import EditRoleModal from "./EditRoleModal";
 import CreateUserModal from "./CreateUserModal";
 import { UserRow } from "./types";
-
+import { useSearchParams } from "next/navigation";
 const FALLBACK_AVATAR = "/img/avatar.png"; // adjust to an existing static asset
 
 const AdminUserTable = () => {
@@ -14,7 +14,21 @@ const AdminUserTable = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const sortedUsers = useMemo(() => users, [users]);
+
+
+
+
+  const searchParams = useSearchParams();
+const q = (searchParams.get("q") ?? "").trim().toLowerCase();
+
+ const sortedUsers = useMemo(() => {
+  if (!q) return users;
+
+  return users.filter((u) => {
+    const hay = `${u.name ?? ""} ${u.email ?? ""} ${u.role ?? ""}`.toLowerCase();
+    return hay.includes(q);
+  });
+}, [users, q]);
 
   async function fetchUsers() {
     setLoading(true);

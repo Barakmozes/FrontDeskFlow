@@ -1,0 +1,31 @@
+query GetCategories {
+  getCategories {
+    id
+    title
+    desc
+    img
+  }
+}
+
+mutation AddCategory($title: String!, $desc: String!, $img: String!) {
+  addCategory(title: $title, desc: $desc, img: $img) {
+    id
+  }
+}
+
+mutation EditCategory(
+  $editCategoryId: String!
+  $title: String!
+  $desc: String!
+  $img: String!
+) {
+  editCategory(id: $editCategoryId, title: $title, desc: $desc, img: $img) {
+    id
+  }
+}
+
+mutation DeleteCategory($deleteCategoryId: String!) {
+  deleteCategory(id: $deleteCategoryId) {
+    id
+  }
+}

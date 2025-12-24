@@ -13,13 +13,13 @@ import {
   type EditAreaMutationVariables,
 } from "@/graphql/generated";
 
-import { parseHotelSettings, serializeHotelSettings } from "@/lib/hotelSettingsTags";
+import { parseHotelSettings, serializeHotelSettings, summarizeOpeningHours } from "@/lib/hotelSettingsTags";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-medium text-gray-600 mb-1">{children}</div>;
 }
 
-export default function RestaurantDetails() {
+export default function HotelPricingAndPolicy() {
   const [{ data, fetching, error }, refetch] = useQuery<GetAreasQuery, GetAreasQueryVariables>({
     query: GetAreasDocument,
     variables: {},
@@ -44,18 +44,20 @@ export default function RestaurantDetails() {
 
   const parsed = useMemo(() => parseHotelSettings(selectedHotel?.description ?? ""), [selectedHotel]);
 
-  const [hotelAddress, setHotelAddress] = useState(parsed.settings.hotelAddress);
-  const [hotelPhone, setHotelPhone] = useState(parsed.settings.hotelPhone);
-  const [hotelEmail, setHotelEmail] = useState(parsed.settings.hotelEmail);
-  const [hotelWebsite, setHotelWebsite] = useState(parsed.settings.hotelWebsite);
-  const [vatNumber, setVatNumber] = useState(parsed.settings.vatNumber);
+  const [checkInTime, setCheckInTime] = useState(parsed.settings.checkInTime);
+  const [checkOutTime, setCheckOutTime] = useState(parsed.settings.checkOutTime);
+  const [checkoutRequiresPaidFolio, setCheckoutRequiresPaidFolio] = useState(
+    parsed.settings.checkoutRequiresPaidFolio
+  );
+
+  // This is the hotel's "Notes/Policies/Instructions" text (free text)
+  const [policyNotes, setPolicyNotes] = useState(parsed.baseText);
 
   useEffect(() => {
-    setHotelAddress(parsed.settings.hotelAddress);
-    setHotelPhone(parsed.settings.hotelPhone);
-    setHotelEmail(parsed.settings.hotelEmail);
-    setHotelWebsite(parsed.settings.hotelWebsite);
-    setVatNumber(parsed.settings.vatNumber);
+    setCheckInTime(parsed.settings.checkInTime);
+    setCheckOutTime(parsed.settings.checkOutTime);
+    setCheckoutRequiresPaidFolio(parsed.settings.checkoutRequiresPaidFolio);
+    setPolicyNotes(parsed.baseText);
   }, [selectedHotelId]);
 
   const [{ fetching: saving }, editArea] = useMutation<EditAreaMutation, EditAreaMutationVariables>(
@@ -63,27 +65,24 @@ export default function RestaurantDetails() {
   );
 
   const isDirty =
-    hotelAddress !== parsed.settings.hotelAddress ||
-    hotelPhone !== parsed.settings.hotelPhone ||
-    hotelEmail !== parsed.settings.hotelEmail ||
-    hotelWebsite !== parsed.settings.hotelWebsite ||
-    vatNumber !== parsed.settings.vatNumber;
+    checkInTime !== parsed.settings.checkInTime ||
+    checkOutTime !== parsed.settings.checkOutTime ||
+    checkoutRequiresPaidFolio !== parsed.settings.checkoutRequiresPaidFolio ||
+    policyNotes.trim() !== parsed.baseText.trim();
 
   const onSave = async () => {
     if (!selectedHotel) return;
 
     const nextTags = {
       ...parsed.tags,
-      hotelAddress: hotelAddress.trim(),
-      hotelPhone: hotelPhone.trim(),
-      hotelEmail: hotelEmail.trim(),
-      hotelWebsite: hotelWebsite.trim(),
-      vatNumber: vatNumber.trim(),
+      checkInTime: checkInTime.trim(),
+      checkOutTime: checkOutTime.trim(),
+      checkoutRequiresPaidFolio: String(Boolean(checkoutRequiresPaidFolio)),
     };
 
     const nextDescription = serializeHotelSettings({
       tags: nextTags,
-      description: parsed.baseText, // preserve policy notes
+      description: policyNotes, // update free text here
     });
 
     const res = await editArea({
@@ -94,24 +93,24 @@ export default function RestaurantDetails() {
 
     if (res.error) {
       console.error(res.error);
-      toast.error("Failed to save hotel details.");
+      toast.error("Failed to save pricing & policy.");
       return;
     }
 
-    toast.success("Hotel details saved.");
+    toast.success("Pricing & policy saved.");
     refetch({ requestPolicy: "network-only" });
   };
 
-  if (fetching) return <div className="text-sm text-gray-500">Loading hotel details…</div>;
+  if (fetching) return <div className="text-sm text-gray-500">Loading hotel policies…</div>;
   if (error) return <div className="text-sm text-red-600">Error: {error.message}</div>;
   if (!hotels.length) return <div className="text-sm text-gray-500">No hotels found.</div>;
 
   return (
     <div className="rounded-xl border bg-white shadow-sm">
       <div className="border-b px-4 py-3">
-        <div className="text-sm font-semibold">Hotel Details (per hotel)</div>
+        <div className="text-sm font-semibold">Hotel Pricing & Policy</div>
         <div className="text-xs text-gray-500">
-          Contact/address details used by Reception and receipts/folios.
+          Defines operational rules used by Reception (check-in/out times, checkout gating, etc.).
         </div>
       </div>
 
@@ -154,65 +153,61 @@ export default function RestaurantDetails() {
           </button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <div>
-            <FieldLabel>Address</FieldLabel>
+            <FieldLabel>Check‑in time</FieldLabel>
             <input
-              value={hotelAddress}
-              onChange={(e) => setHotelAddress(e.target.value)}
+              type="time"
+              value={checkInTime}
+              onChange={(e) => setCheckInTime(e.target.value)}
               className="w-full rounded-lg border px-3 py-2 text-sm"
-              placeholder="Street, City, Country"
             />
           </div>
 
           <div>
-            <FieldLabel>Phone</FieldLabel>
+            <FieldLabel>Check‑out time</FieldLabel>
             <input
-              value={hotelPhone}
-              onChange={(e) => setHotelPhone(e.target.value)}
+              type="time"
+              value={checkOutTime}
+              onChange={(e) => setCheckOutTime(e.target.value)}
               className="w-full rounded-lg border px-3 py-2 text-sm"
-              placeholder="+1 555 123 456"
             />
           </div>
 
-          <div>
-            <FieldLabel>Email</FieldLabel>
+          <div className="flex items-center gap-2 pt-6">
             <input
-              value={hotelEmail}
-              onChange={(e) => setHotelEmail(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              placeholder="frontdesk@hotel.com"
+              id="checkoutRequiresPaidFolio"
+              type="checkbox"
+              checked={checkoutRequiresPaidFolio}
+              onChange={(e) => setCheckoutRequiresPaidFolio(e.target.checked)}
+              className="h-4 w-4"
             />
+            <label htmlFor="checkoutRequiresPaidFolio" className="text-sm text-gray-800">
+              Checkout requires paid folio (Reception)
+            </label>
           </div>
+        </div>
 
-          <div>
-            <FieldLabel>Website</FieldLabel>
-            <input
-              value={hotelWebsite}
-              onChange={(e) => setHotelWebsite(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              placeholder="https://hotel.com"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>VAT / Tax number</FieldLabel>
-            <input
-              value={vatNumber}
-              onChange={(e) => setVatNumber(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              placeholder="Optional"
-            />
+        <div>
+          <FieldLabel>Policy / operational notes (shown to Reception)</FieldLabel>
+          <textarea
+            value={policyNotes}
+            onChange={(e) => setPolicyNotes(e.target.value)}
+            rows={6}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+            placeholder="Example: Late check-out fee… ID verification… Deposit rules…"
+          />
+          <div className="text-[11px] text-gray-500 mt-1">
+            Reception will display this inside the stay details for this hotel.
           </div>
         </div>
 
         <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-700">
-          <div className="font-semibold text-gray-800 mb-1">Stored values</div>
-          <div>Address: {parsed.settings.hotelAddress || "—"}</div>
-          <div>Phone: {parsed.settings.hotelPhone || "—"}</div>
-          <div>Email: {parsed.settings.hotelEmail || "—"}</div>
-          <div>Website: {parsed.settings.hotelWebsite || "—"}</div>
-          <div>VAT: {parsed.settings.vatNumber || "—"}</div>
+          <div className="font-semibold text-gray-800 mb-1">Current hotel snapshot</div>
+          <div>Check‑in: {parsed.settings.checkInTime}</div>
+          <div>Check‑out: {parsed.settings.checkOutTime}</div>
+          <div>Requires paid folio: {parsed.settings.checkoutRequiresPaidFolio ? "Yes" : "No"}</div>
+          <div>Opening hours: {summarizeOpeningHours(parsed.settings.openingHours)}</div>
         </div>
       </div>
     </div>

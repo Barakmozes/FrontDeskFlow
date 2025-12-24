@@ -212,18 +212,22 @@ export function CreateReservationModal({
             placeholder="guest@example.com"
           />
           <div className="flex flex-wrap gap-2 mt-1">
-            {suggestedUsers
-              .filter((u) => !!u.email)
-              .map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => setGuestEmail(u.email!)}
-                  className="text-xs rounded-full border px-3 py-1 hover:bg-gray-50"
-                >
-                  {u.profile?.name ? `${u.profile.name} (${u.email})` : u.email}
-                </button>
-              ))}
+<select
+  className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+  defaultValue=""
+  onChange={(e) => setGuestEmail(e.target.value)}
+>
+  <option value="" disabled>
+    all customers
+  </option>
+  {suggestedUsers
+    .filter((u) => u.role === "USER" && !!u.email)
+    .map((u) => (
+      <option key={u.id} value={u.email!}>
+        {u.profile?.name ? `${u.profile.name} (${u.email})` : u.email}
+      </option>
+    ))}
+</select>
           </div>
         </div>
 

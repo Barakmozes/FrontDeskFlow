@@ -1,3 +1,4 @@
+// app/components/Restaurant_interface/Folio/printInvoice.ts
 import type { FolioLine } from "./types";
 
 export function buildInvoiceHtml(args: {
@@ -77,4 +78,33 @@ export function buildInvoiceHtml(args: {
     </body>
   </html>
   `;
+}
+
+/**
+ * ✅ Printing happens HERE (as requested).
+ * Returns false when popup is blocked.
+ */
+export function printInvoice(args: Parameters<typeof buildInvoiceHtml>[0]): boolean {
+  const html = buildInvoiceHtml(args);
+
+  if (typeof window === "undefined") return false;
+
+  const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=900");
+  if (!win) return false;
+
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+
+  // Let the browser render before printing
+  setTimeout(() => {
+    try {
+      win.print();
+    } catch {
+      // ignore
+    }
+  }, 250);
+
+  return true;
 }

@@ -16,13 +16,22 @@ generator pothos {
 // -----------------------------------------------------------------------------
 
 enum Role {
+  // Guest / customer
   USER
+
+  // Hotel roles
+  RECEPTION
+  HOUSEKEEPING
+  ACCOUNTING
+  MANAGER
   ADMIN
+
+  // Legacy (restaurant) roles - keep temporarily until DB rows are migrated
   DELIVERY
   WAITER
   CHEF
-  MANAGER
 }
+
 
 enum OrderStatus {
   PREPARING

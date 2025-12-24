@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Role } from "@prisma/client";
 import type { UserRow } from "./types";
 
@@ -10,12 +10,40 @@ type Props = {
   onUpdated: () => void;
 };
 
-const ROLES: Role[] = ["USER", "ADMIN", "DELIVERY", "WAITER", "CHEF", "MANAGER"];
+// Hotel roles (what you want to actively use)
+const HOTEL_ROLES: Role[] = [
+  "USER",
+  "RECEPTION",
+  "HOUSEKEEPING",
+  "ACCOUNTING",
+  "MANAGER",
+  "ADMIN",
+];
+
+// Legacy roles (temporary during migration)
+const LEGACY_ROLES: Role[] = ["DELIVERY", "WAITER", "CHEF"];
+
+// Nice labels for UI
+const ROLE_LABEL: Partial<Record<Role, string>> = {
+  USER: "Guest (USER)",
+  RECEPTION: "Reception",
+  HOUSEKEEPING: "Housekeeping",
+  ACCOUNTING: "Accounting",
+  MANAGER: "Manager",
+  ADMIN: "Admin",
+
+  DELIVERY: "Legacy: DELIVERY",
+  WAITER: "Legacy: WAITER",
+  CHEF: "Legacy: CHEF",
+};
 
 export default function EditRoleForm({ user, onClose, onUpdated }: Props) {
   const [role, setRole] = useState<Role>(user.role);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Ensure current role is selectable even if legacy
+  const showLegacyGroup = useMemo(() => LEGACY_ROLES.includes(user.role), [user.role]);
 
   async function saveRole() {
     setError(null);
@@ -53,12 +81,7 @@ export default function EditRoleForm({ user, onClose, onUpdated }: Props) {
 
       <div>
         <label className="form-label">Username</label>
-        <input
-          type="text"
-          className="formInput"
-          value={user.email ?? ""}
-          disabled
-        />
+        <input type="text" className="formInput" value={user.email ?? ""} disabled />
       </div>
 
       <div>
@@ -68,12 +91,28 @@ export default function EditRoleForm({ user, onClose, onUpdated }: Props) {
           onChange={(e) => setRole(e.target.value as Role)}
           className="block w-full rounded-md appearance-none bg-white border border-green-400 px-4 py-2 pr-8 leading-tight focus:outline-none"
         >
-          {ROLES.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
+          <optgroup label="Hotel roles">
+            {HOTEL_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABEL[r] ?? r}
+              </option>
+            ))}
+          </optgroup>
+
+          {showLegacyGroup ? (
+            <optgroup label="Legacy roles (restaurant)">
+              {LEGACY_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABEL[r] ?? r}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
         </select>
+
+        <p className="mt-1 text-xs text-gray-500">
+          Legacy roles exist only for transition. After migration, assign hotel roles only.
+        </p>
       </div>
 
       <div className="flex justify-end gap-2 pt-2">
@@ -86,12 +125,7 @@ export default function EditRoleForm({ user, onClose, onUpdated }: Props) {
           Cancel
         </button>
 
-        <button
-          type="button"
-          className="form-button"
-          onClick={saveRole}
-          disabled={loading}
-        >
+        <button type="button" className="form-button" onClick={saveRole} disabled={loading}>
           {loading ? "Saving..." : "Save Role"}
         </button>
       </div>

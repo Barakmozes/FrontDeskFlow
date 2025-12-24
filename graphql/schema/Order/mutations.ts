@@ -133,4 +133,41 @@ builder.mutationFields((t) => ({
       return updatedOrder;
     },
   }),
+   /**
+   * deleteOrder
+   * Deletes an order by id.
+   * Requires ADMIN (אפשר לשנות למנהל/תפקידים אחרים לפי הצורך).
+   */
+  deleteOrder: t.prismaField({
+    type: "Order",
+    args: {
+      id: t.arg.string({ required: true }),
+    },
+    resolve: async (_query, _parent, args, contextPromise) => {
+      const context = await contextPromise;
+
+      // Must be logged in
+      if (!context.user) {
+        throw new GraphQLError("You must be logged in to perform this action");
+      }
+
+      // Must be ADMIN (שנה אם צריך)
+      if (context.user.role !== "ADMIN" && context.user.role !== "MANAGER" ) {
+        throw new GraphQLError("You don't have permission to perform this action");
+      }
+
+      try {
+        // Delete and return deleted row (Prisma returns deleted object)
+        const deleted = await prisma.order.delete({
+          where: { id: args.id },
+        });
+        return deleted;
+      } catch (e: any) {
+        // Prisma throws if not found
+        throw new GraphQLError("Order not found");
+      }
+    },
+  }),
 }));
+ 
+
