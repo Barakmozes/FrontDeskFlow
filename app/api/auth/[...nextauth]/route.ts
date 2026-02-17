@@ -68,11 +68,11 @@ export const authOptions: NextAuthOptions = {
     /**
      * 📘 Facebook
      */
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_CLIENT_ID as string,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET as string,
-      allowDangerousEmailAccountLinking: true,
-    }),
+    // FacebookProvider({
+    //   clientId: process.env.FACEBOOK_CLIENT_ID as string,
+    //   clientSecret: process.env.FACEBOOK_CLIENT_SECRET as string,
+    //   allowDangerousEmailAccountLinking: true,
+    // }),
   ],
 
   secret: process.env.NEXTAUTH_SECRET as string,
