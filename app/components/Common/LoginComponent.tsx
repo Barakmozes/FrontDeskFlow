@@ -105,8 +105,8 @@ const LoginComponent = ({ closeModal }: Props) => {
     switch (name.toLowerCase()) {
       case "google":
         return <FcGoogle size={22} />;
-      case "facebook":
-        return <FaFacebook size={22} className="text-[#1877F2]" />;
+      // case "facebook":
+      //   return <FaFacebook size={22} className="text-[#1877F2]" />;
       default:
         return null;
     }
