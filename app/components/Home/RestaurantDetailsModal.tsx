@@ -35,11 +35,11 @@ const RestaurantDetailsModal = () => {
         <div className="flex flex-col space-y-5">
           <div></div>
           <div>
-            <h1 className="text-3xl">StarManag</h1>
+            <h1 className="text-3xl">FrontDeskFlow</h1>
           </div>
           <div className="flex items-center ">
             <HiMapPin className="shrink-0 mr-2" size={26} />
-            <span>בת ים בן גוריון 136 </span>
+            <span>tanzania</span>
           </div>
 
           <Disclosure as="div" className="mt-2">

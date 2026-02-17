@@ -1,22 +1,19 @@
+// app/(dashboard)/dashboard/settings/page.tsx
+import { getCurrentUser } from "@/lib/session";
 import Container from "@/app/components/Common/Container";
-import RestaurantDetails from "./RestaurantDetails";
-import OpeningHoursForm from "./OpeningHours";
-import AdminCategories from "./AdminCategories";
+import SettingsClient from "./SettingsClient";
 
+export default async function SettingsPage() {
+  const user = await getCurrentUser();
 
-const AdminSettings = () => {
   return (
-    <Container>
-      <div className="  rounded-lg shadow-2xl p-6 my-12 max-h-[80vh] overflow-y-auto bg-white">
-        <div className="text-center  p-6 text-2xl font-semibold text-slate-500 ">
-          Admin Settings
-        </div>
-        <RestaurantDetails /> 
-        <OpeningHoursForm />
-        <AdminCategories/> 
-      </div>
-    </Container>
+    <div className="bg-slate-100 min-h-screen">
+      <Container>
+        <SettingsClient
+          currentUserEmail={user?.email ?? null}
+          currentUserRole={(user as any)?.role ?? null}
+        />
+      </Container>
+    </div>
   );
-};
-
-export default AdminSettings;
+}

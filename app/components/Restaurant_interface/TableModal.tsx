@@ -1,129 +1,108 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useDrag } from "react-dnd";
+import { getEmptyImage } from "react-dnd-html5-backend";
 
-import EditTableModal from "./CRUD_Zone-CRUD_Table/EditTableModal";
-import DeleteTableModal from "./CRUD_Zone-CRUD_Table/DeleteTableModal";
-import { TableInStore } from "@/lib/AreaStore";
-import ToggleReservation from "./Table_Settings/ToggleReservation";
-import SpecialRequests from "./Table_Settings/specialRequests";
-import TableReservations from "./Table_Settings/TableReservations";
-import Start_an_order from "./Table_Settings/Start_an_order_Table";
+import Modal from "../Common/Modal";
+import type { RoomInStore } from "@/lib/AreaStore";
 
-export interface TableModalProps {
-  table: TableInStore;
-  scale: number;
+import ToggleOccupancy from "./Table_Settings/ToggleReservation";
+import RoomBookings from "./Table_Settings/TableReservations";
+import RoomNotes from "./Table_Settings/specialRequests";
+import EditRoomModal from "./CRUD_Zone-CRUD_Table/EditTableModal";
+import DeleteRoomModal from "./CRUD_Zone-CRUD_Table/DeleteTableModal";
+
+interface RoomPinProps {
+  room: RoomInStore;
 }
 
-const TableModal: React.FC<TableModalProps> = ({ table, scale }) => {
+type DragItem = {
+  roomId: string;
+  left: number;
+  top: number;
+};
 
-  const isDirty = table?.dirty;
+const RoomPin: React.FC<RoomPinProps> = ({ room }) => {
+  const [isOpen, setIsOpen] = useState(false);
 
-  const { tableNumber, diners, position, id, reserved } = table;
-  const x = (position as any)?.x ?? 0;
-  const y = (position as any)?.y ?? 0;
+  const x = room.position?.x ?? 0;
+  const y = room.position?.y ?? 0;
 
-  const [{ isDragging }, drag] = useDrag(() => ({
-    type: "TABLE",
-    item: { tableId: table.id },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
+  const statusLabel = room.isOccupied ? "Occupied" : "Available";
+  const statusClass = room.isOccupied
+    ? "bg-red-100 text-red-700 border-red-200"
+    : "bg-green-100 text-green-700 border-green-200";
+
+  const title = useMemo(() => `Room ${room.roomNumber}`, [room.roomNumber]);
+
+  const [{ isDragging }, dragRef, preview] = useDrag(
+    () => ({
+      type: "ROOM",
+      // ✅ שולחים גם את המיקום ההתחלתי
+      item: (): DragItem => ({ roomId: room.id, left: x, top: y }),
+      collect: (monitor) => ({ isDragging: monitor.isDragging() }),
     }),
-  }));
+    [room.id, x, y]
+  );
 
-
+  // ✅ אופציונלי אבל מומלץ: מבטל את תמונת ה-ghost של הדפדפן,
+  // ואז אתה רואה את השולחן עצמו זז בצורה הכי "נעימה"
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
 
   return (
-    <div
-      ref={drag}
-      className={`relative p-2 sm:p-2 bg-white rounded-lg shadow-md border border-gray-200 transition-transform ${
-        isDragging ? "opacity-75 border-blue-500" : ""
-      }`}
-      style={{
-        position: "absolute",
-        transform: `translate(${x}px, ${y}px) scale(${scale})`,
-        transformOrigin: "top left",
-        width: "clamp(120px, 20vw, 160px)", // Responsive width
-        cursor: "move",
-      }}
-      aria-label={`Table ${tableNumber}, ${
-        reserved ? "Reserved" : "Available"
-      }, for ${diners} diners`}
-    >
-      {/* Table Info */}
-      <div className="mb-2 text-start">
-        <div className="flex mx-auto justify-between mb-1">
-          <div
-            className="text-sm bg-green-600 text-white px-2 py-1 rounded-lg shadow hover:bg-green-700 transition"
-            aria-label="Show All Tables"
-          >
-            <DeleteTableModal table={table as TableInStore} />
-          </div>
-          <div
-            className="text-sm bg-green-600 text-white px-2 py-1 rounded-lg shadow hover:bg-green-700 transition"
-            aria-label="Show All Tables"
-          >
-            <EditTableModal table={table as TableInStore} />
-          </div>
-        </div>
-        <h2 className="text-sm sm:text-base font-bold text-gray-700">
-          Table #{tableNumber}
-          {isDirty && <span className="text-red-500">*</span>}
-        </h2>
-        <p className="text-xs sm:text-sm text-gray-500">
-          <strong>Diners:</strong> {diners}
-        </p>
-        
-        <div className="flex">
-          {/* Reservation Toggle */}
-        <ToggleReservation table={table as TableInStore} />
-             {/* Table Reservations */}
-        <TableReservations table={table as TableInStore} />
-        </div>
-      
-      </div>
-
-      
-      {/* Special Requests */}
-         <SpecialRequests table={table as TableInStore  /* if needed, or typed to the same shape */} />
-
-              
-         <Start_an_order table={table as TableInStore}/>
-      {/* Table Visualization */}
-      <div className="relative mt-4 mx-auto">
-        <div
-          className={`relative ${
-            diners <= 4
-              ? "w-20 h-20 sm:w-24 sm:h-24 rounded-full"
-              : "w-32 h-20 sm:w-36 sm:h-24 rounded-lg"
-          } bg-gray-200 shadow-inner flex items-center justify-center`}
+    <>
+      <div
+        ref={dragRef}
+        className={`absolute select-none ${isDragging ? "opacity-60" : "opacity-100"}`}
+        style={{
+          transform: `translate3d(${x}px, ${y}px, 0)`,
+          transformOrigin: "top left",
+          zIndex: isDragging ? 50 : 10,
+        }}
+        aria-label={`${title} (${statusLabel})`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            // נשאיר כמו אצלך – בפועל לרוב drag לא יורה click
+            if (!isDragging) setIsOpen(true);
+          }}
+          className={`flex items-center gap-2 px-2 py-1 rounded-lg border shadow-sm hover:shadow-md transition cursor-grab active:cursor-grabbing ${statusClass}`}
         >
-          <h3 className="absolute text-xs sm:text-sm font-bold text-gray-600">
-            #{tableNumber}
-          </h3>
-          {Array.from({ length: diners }).map((_, index) => {
-            const angle = (index / diners) * 360;
-            const radius = diners <= 4 ? 35 : 45; // Adjust radius for smaller screens
-            const seatX = radius * Math.cos((angle * Math.PI) / 180);
-            const seatY = radius * Math.sin((angle * Math.PI) / 180);
-            return (
-              <div
-                key={index}
-                className="absolute w-4 h-4 sm:w-5 sm:h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[8px] sm:text-[10px] font-bold"
-                style={{
-                  transform: `translate(${seatX}px, ${seatY}px)`,
-                }}
-                aria-label={`Seat ${index + 1}`}
-              >
-                {index + 1}
-              </div>
-            );
-          })}
-        </div>
+          <span className="text-xs font-semibold">{room.roomNumber}</span>
+          {room.dirty ? <span className="text-[10px] font-semibold text-orange-700">●</span> : null}
+        </button>
       </div>
-    </div>
+
+      <Modal isOpen={isOpen} closeModal={() => setIsOpen(false)} title={`${title} — ${statusLabel}`}>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              <div>
+                <span className="font-semibold">Max guests:</span> {room.capacity}
+              </div>
+              <div className="text-xs text-gray-500">Hotel ID: {room.hotelId}</div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <EditRoomModal room={room} />
+              <DeleteRoomModal room={room} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <ToggleOccupancy room={room}  />
+            <RoomBookings room={room} />
+          </div>
+
+          <RoomNotes room={room} />
+        </div>
+      </Modal>
+    </>
   );
 };
 
-export default React.memo(TableModal);
+export default React.memo(RoomPin);

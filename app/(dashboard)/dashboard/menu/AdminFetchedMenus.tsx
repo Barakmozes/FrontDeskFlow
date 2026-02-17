@@ -3,7 +3,8 @@ import { useQuery } from "@urql/next";
 import AdminPreviewMenu from "./AdminPreviewMenu";
 import AdminEditMenu from "./AdminEditMenu";
 import AdminDeleteMenu from "./AdminDeleteMenu";
-
+import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { Menu } from "@prisma/client";
 import { GetMenusDocument, GetMenusQuery, GetMenusQueryVariables } from "@/graphql/generated";
 
@@ -28,11 +29,25 @@ export const AdminFetchedMenus = ({
 
   const endCursor = data?.getMenus.pageInfo?.endCursor;
   const hasAdminNextPage = data?.getMenus.pageInfo.hasNextPage;
+  const searchParams = useSearchParams();
+  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
 
+  const filteredMenus = useMemo(() => {
+  const edges = menus?.filter(Boolean) ?? [];
+  if (!q) return edges;
+
+  return edges.filter((edge) => {
+    const m = edge!.node;
+    const hay = `${m.title} ${m.category} ${m.shortDescr ?? ""} ${m.longDescr ?? ""}`.toLowerCase();
+    return hay.includes(q);
+  });
+}, [menus, q]);
+
+  
   return (
     <>
       <tbody>
-        {menus?.map((MenuEdge) => (
+        {filteredMenus?.map((MenuEdge) => (
           <tr className="bg-white " key={MenuEdge?.node.id}>
             <td className="px-6 py-2">
               <input

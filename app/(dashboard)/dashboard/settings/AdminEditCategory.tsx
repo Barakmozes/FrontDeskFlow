@@ -1,98 +1,121 @@
-import Image from "next/image";
+"use client";
 
-import { HiOutlinePencil, HiOutlinePencilSquare } from "react-icons/hi2";
+import React, { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { useMutation } from "@urql/next";
 
-import { useState } from "react";
-
-import { useRouter } from "next/navigation";
 import Modal from "@/app/components/Common/Modal";
 import UploadImg from "../Components/UploadImg";
-import { Category } from "@prisma/client";
+import { SupabaseImageUpload } from "@/lib/supabaseStorage";
 
-type Props = {
-  cat: Category;
-};
+import {
+  EditCategoryDocument,
+  EditCategoryMutation,
+  EditCategoryMutationVariables,
+  GetCategoriesQuery,
+} from "@/graphql/generated";
 
-const AdminEditCategory = ({ cat }: Props) => {
-  const router = useRouter();
+type Category = GetCategoriesQuery["getCategories"][number];
+
+export default function AdminEditCategory({
+  category,
+  onChanged,
+}: {
+  category: Category;
+  onChanged: () => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
-  const [title, setTitle] = useState(cat.title);
-  const [desc, setDesc] = useState(cat.desc);
-  const [image, setImage] = useState(cat.img);
 
+  const [{ fetching }, editCategory] = useMutation<
+    EditCategoryMutation,
+    EditCategoryMutationVariables
+  >(EditCategoryDocument);
+
+  const [title, setTitle] = useState(category.title);
+  const [desc, setDesc] = useState(category.desc);
+  const [imgFile, setImgFile] = useState<File | null>(null);
+  const [imgUrl, setImgUrl] = useState(category.img);
+
+  useEffect(() => {
+    setTitle(category.title);
+    setDesc(category.desc);
+    setImgUrl(category.img);
+    setImgFile(null);
+  }, [category.id]);
+
+  const openModal = () => setIsOpen(true);
   const closeModal = () => setIsOpen(false);
-  const OpenModal = () => setIsOpen(true);
 
-  const getCategoryImgFile = async (file: File) => {
-    console.log(file); 
-  };
+  async function submit() {
+    if (!title.trim()) return toast.error("Title is required.");
+    if (!desc.trim()) return toast.error("Description is required.");
 
+    let nextImg = imgUrl;
+
+    if (imgFile) {
+      const url = await SupabaseImageUpload(imgFile);
+      if (!url) return toast.error("Image upload failed.");
+      nextImg = url;
+    }
+
+    const res = await editCategory({
+      editCategoryId: category.id,
+      title: title.trim(),
+      desc: desc.trim(),
+      img: nextImg,
+    });
+
+    if (res.error) {
+      console.error(res.error);
+      toast.error("Failed to update category.");
+      return;
+    }
+
+    toast.success("Category updated.");
+    onChanged();
+    closeModal();
+  }
 
   return (
     <>
-      <HiOutlinePencilSquare
-        onClick={OpenModal}
-        className="cursor-pointer h-6 w-6 text-green-600"
-      />
-      <Modal isOpen={isOpen} title={cat.title} closeModal={closeModal}>
-        <form>
-          <div className="grid gap-4 mb-4 sm:grid-cols-2">
-            <div className="sm:col-span-2 border-gray-300">
-              <Image
-                src={cat.img}
-                alt="chefy"
-                width={360}
-                height={200}
-                className="h-16 w-16 object-cover rounded-md "
-              />
-            </div>
-            <div>
-              <label htmlFor="name" className="form-label ">
-                Title
-              </label>
-              <input
-                type="text"
-                name="name"
-                id="name"
-                className="form-input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="price" className="form-label ">
-                Description
-              </label>
-              <input
-                type="text"
-                name="desc"
-                id="desc"
-                className="form-input"
-                placeholder="Description"
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-              />
+      <button
+        onClick={openModal}
+        className="rounded-md border px-3 py-2 text-xs hover:bg-gray-50"
+      >
+        Edit
+      </button>
+
+      <Modal isOpen={isOpen} title="Edit Category" closeModal={closeModal}>
+        <div className="space-y-4">
+          <div>
+            <label className="form-label">Title</label>
+            <input className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="form-label">Description</label>
+            <input className="formInput" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="form-label">Image</label>
+            <div className="rounded-md border bg-gray-50 p-3">
+              <UploadImg handleCallBack={(f: File) => setImgFile(f)} id="cat-edit-img" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imgUrl} alt="category" className="mt-3 h-20 w-20 rounded-md border object-cover" />
             </div>
           </div>
 
-          <UploadImg handleCallBack={getCategoryImgFile} id="editCategory" />
-
-          <button
-            type="submit"
-            className="text-white inline-flex items-center bg-green-600
-         hover:bg-green-700 focus:ring-4 focus:outline-none focus:ring-green-300
-          font-medium rounded-lg text-sm px-5 py-2.5 text-center "
-          >
-            <HiOutlinePencil
-              className="mr-1 -ml-1 w-4 h-4"
-              fill="currentColor"
-            />
-            Edit Category
-          </button>
-        </form>
+          <div className="flex justify-end gap-2 pt-2">
+            <button className="rounded-md border px-4 py-2 text-sm hover:bg-gray-50" onClick={closeModal}>
+              Cancel
+            </button>
+            <button className="form-button" onClick={submit} disabled={fetching}>
+              {fetching ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
       </Modal>
     </>
   );
-};
-
-export default AdminEditCategory;
+}

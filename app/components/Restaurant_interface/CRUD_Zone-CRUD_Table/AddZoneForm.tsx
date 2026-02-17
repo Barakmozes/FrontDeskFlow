@@ -2,35 +2,39 @@
 
 import React, { useState } from "react";
 import { useMutation, useQuery } from "@urql/next";
+import toast from "react-hot-toast";
+
 import Modal from "../../Common/Modal";
-import AddZoneModal from "./AddZoneModal";
+import AddHotelButton from "./AddZoneModal";
+
 import {
   AddAreaDocument,
   AddAreaMutation,
   AddAreaMutationVariables,
   GetAreasNameDescriptionDocument,
 } from "@/graphql/generated";
-import toast from "react-hot-toast";
 
-const AddZoneForm = () => {
+/**
+ * AddHotelForm
+ * Backend mapping: Area -> Hotel
+ */
+const AddHotelForm = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [zoneName, setZoneName] = useState("");
-  const [zoneDescription, setZoneDescription] = useState("");
+  const [hotelName, setHotelName] = useState("");
+  const [hotelDescription, setHotelDescription] = useState("");
 
   const closeModal = () => setIsOpen(false);
   const openModal = () => setIsOpen(true);
 
-  // 1) Pause the query so it won't run on mount. We only reexecute after mutation success.
-  const [{}, reexecuteQuery] = useQuery({
+  // Re-execute hotel list query after mutation success
+  const [, reexecuteHotelsQuery] = useQuery({
     query: GetAreasNameDescriptionDocument,
     pause: true,
     variables: {
-      // Same example from DeleteZoneModal
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "asc" as any },
     },
   });
 
-  // 2) GraphQL Mutation: addArea
   const [{ fetching, error }, addArea] = useMutation<
     AddAreaMutation,
     AddAreaMutationVariables
@@ -38,85 +42,71 @@ const AddZoneForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!zoneName.trim()) return;
+    if (!hotelName.trim()) return;
 
-    try {
-      const result = await addArea({
-        name: zoneName,
-        description: zoneDescription,
-      });
+    const result = await addArea({
+      name: hotelName.trim(),
+      description: hotelDescription.trim(),
+    });
 
-      if (result.data?.addArea?.id) {
-        // Success: re-fetch the areas, reset form, show toast
-        await reexecuteQuery({ requestPolicy: "network-only" });
-        setZoneName("");
-        setZoneDescription("");
-        closeModal();
-        toast.success("Area successfully added and updated!", { duration: 800 });
-      }
-    } catch (err) {
-      console.error("Failed to add area:", err);
+    if (result.error) {
+      console.error("Failed to add hotel:", result.error);
+      toast.error("Failed to add hotel.");
+      return;
+    }
+
+    if (result.data?.addArea?.id) {
+      await reexecuteHotelsQuery({ requestPolicy: "network-only" });
+      setHotelName("");
+      setHotelDescription("");
+      closeModal();
+      toast.success("Hotel created!", { duration: 900 });
     }
   };
 
   return (
     <>
-      {/* 1) Button or UI to open the modal */}
-      <AddZoneModal openModal={openModal} />
+      <AddHotelButton openModal={openModal} />
 
-      {/* 2) Modal with the creation form */}
-      <Modal isOpen={isOpen} closeModal={closeModal}>
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-4 max-w-md mx-auto p-4 bg-white rounded-lg shadow-md"
-        >
-          <h2 className="text-xl font-bold text-gray-800 mb-2">
-            Create a New Zone
-          </h2>
-
-          {/* Zone Name */}
+      <Modal isOpen={isOpen} closeModal={closeModal} title="Create a New Hotel">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label htmlFor="zoneName" className="block text-sm font-medium mb-1">
-              Zone Name <span className="text-red-500">*</span>
+            <label htmlFor="hotelName" className="block text-sm font-medium mb-1">
+              Hotel Name <span className="text-red-500">*</span>
             </label>
             <input
-              id="zoneName"
+              id="hotelName"
               type="text"
-              value={zoneName}
-              onChange={(e) => setZoneName(e.target.value)}
-              placeholder="Enter zone name"
+              value={hotelName}
+              onChange={(e) => setHotelName(e.target.value)}
+              placeholder="Enter hotel name"
               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
               required
             />
           </div>
 
-          {/* Zone Description (optional) */}
           <div>
             <label
-              htmlFor="zoneDescription"
+              htmlFor="hotelDescription"
               className="block text-sm font-medium mb-1"
             >
               Description (optional)
             </label>
             <textarea
-              id="zoneDescription"
-              value={zoneDescription}
-              onChange={(e) => setZoneDescription(e.target.value)}
-              placeholder="Describe this zone"
+              id="hotelDescription"
+              value={hotelDescription}
+              onChange={(e) => setHotelDescription(e.target.value)}
+              placeholder="Describe this hotel / property"
               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
               rows={3}
             />
           </div>
 
-          {/* Error Handling */}
-          {error && (
-            <p className="text-red-600 text-sm">
-              Something went wrong: {error.message}
-            </p>
-          )}
+          {error ? (
+            <p className="text-red-600 text-sm">{error.message}</p>
+          ) : null}
 
-          {/* Form Actions */}
-          <div className="flex justify-end gap-2 mt-4">
+          <div className="flex justify-end gap-2 mt-2">
             <button
               type="button"
               onClick={closeModal}
@@ -129,7 +119,7 @@ const AddZoneForm = () => {
               disabled={fetching}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition disabled:opacity-50"
             >
-              {fetching ? "Adding..." : "Add Zone"}
+              {fetching ? "Creating…" : "Create Hotel"}
             </button>
           </div>
         </form>
@@ -138,4 +128,4 @@ const AddZoneForm = () => {
   );
 };
 
-export default AddZoneForm;
+export default AddHotelForm;

@@ -1,121 +1,142 @@
 "use client";
 
-import React, { useRef, useCallback, useEffect } from "react";
-import { useDrop } from "react-dnd";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { useDrop, type DropTargetMonitor } from "react-dnd";
 import throttle from "lodash/throttle";
-import TableModal from "./TableModal";
-import { BasicArea } from "@/graphql/generated";
-import{TableInStore}from "@/lib/AreaStore";
 
+import type { BasicArea } from "@/graphql/generated";
+import type { RoomInStore } from "@/lib/AreaStore";
 
-export interface TablesSectionProps {
-  areaSelect: BasicArea;
-  filteredTables:TableInStore[];
+import RoomPin from "./TableModal";
+
+export interface RoomsSectionProps {
+  hotel: BasicArea;
+  rooms: RoomInStore[];
   scale: number;
-  /**
-   * Now expects (tableId: string, newAreaId: string, newPos: { x: number; y: number })
-   * for local store updates or anything else.
-   */
-  moveTable: (tableId: string, newAreaId: string, newPos: { x: number; y: number }) => void;
-
+  moveRoom: (
+    roomId: string,
+    newHotelId: string,
+    newPosition: { x: number; y: number }
+  ) => void;
 }
 
-const TablesSection: React.FC<TablesSectionProps> = ({
-  areaSelect,
-  filteredTables,
-  scale,
-  moveTable,
-}) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+type DragItem = {
+  roomId: string;
+  left: number;
+  top: number;
+};
 
+// אם תרצה Snap עדין בעתיד – שים מספר > 0 (למשל 5)
+// לבקשה שלך ("בלי סטייה") נשאיר 0
+const GRID_SIZE = 0;
 
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
+const snapIfNeeded = (x: number, y: number) => {
+  if (GRID_SIZE <= 0) return { x, y };
+  return {
+    x: Math.round(x / GRID_SIZE) * GRID_SIZE,
+    y: Math.round(y / GRID_SIZE) * GRID_SIZE,
+  };
+};
 
-  
-  // Throttle "moveTable"
-  const throttledMoveTable = useCallback(
-    throttle(async (tableId, newAreaId, newPosition) => {
-      // Just do the local store update
-      moveTable(tableId, newAreaId, newPosition);
-      // No DB call here
-    }, 100),
-    [moveTable]
+const RoomsSection: React.FC<RoomsSectionProps> = ({ hotel, rooms, scale, moveRoom }) => {
+  const floorplanRef = useRef<HTMLDivElement | null>(null);
+
+  // "Preview move" בזמן גרירה (נעים וחלק)
+  // 16ms ~ פריים אחד (60fps)
+  const throttledPreviewMove = useMemo(
+    () =>
+      throttle((roomId: string, pos: { x: number; y: number }) => {
+        moveRoom(roomId, hotel.id, pos);
+      }, 16),
+    [moveRoom, hotel.id]
   );
 
-  // Snap to 5px grid
-  const snapToGrid = (x: number, y: number, gridSize: number) => ({
-    x: Math.round(x / gridSize) * gridSize,
-    y: Math.round(y / gridSize) * gridSize,
-  });
+  useEffect(() => {
+    return () => throttledPreviewMove.cancel();
+  }, [throttledPreviewMove]);
 
-  // React DnD
-  const [, drop] = useDrop({
-    accept: "TABLE",
-    drop: (item: { tableId: string }, monitor) => {
-      if (!containerRef.current || !areaSelect?.id) return;
+  const computeNextPosition = useCallback(
+    (item: DragItem, monitor: DropTargetMonitor) => {
+      const delta = monitor.getDifferenceFromInitialOffset();
+      if (!delta) return null;
 
-      const offset = monitor.getClientOffset();
-      if (!offset) return;
+      // תזוזה לפי דלתא => אין סטייה של "איפה תפסת" / כותרות / פדינג
+      let x = item.left + delta.x / scale;
+      let y = item.top + delta.y / scale;
 
-      const containerRect = containerRef.current.getBoundingClientRect();
-      let x = (offset.x - containerRect.left) / scale;
-      let y = (offset.y - containerRect.top) / scale;
+      // Snap אופציונלי (כבוי כרגע)
+      ({ x, y } = snapIfNeeded(x, y));
 
-      // clamp
-      x = Math.max(0, Math.min(x, containerRect.width / scale));
-      y = Math.max(0, Math.min(y, containerRect.height / scale));
+      // Clamp לגבולות ה־floorplan (ביחידות לא-מוגדלות)
+      const el = floorplanRef.current;
+      if (el) {
+        const maxX = el.clientWidth / scale;
+        const maxY = el.clientHeight / scale;
+        x = clamp(x, 0, maxX);
+        y = clamp(y, 0, maxY);
+      }
 
-      const newPosition = snapToGrid(x, y, 5);
+      return { x, y };
+    },
+    [scale]
+  );
 
-      // Call our throttled function with 'id' + newAreaId
-      throttledMoveTable(item.tableId, areaSelect.id, newPosition);
+  const [, drop] = useDrop<DragItem>({
+    accept: "ROOM",
+
+    // בזמן גרירה: להזיז את החדר live (נעים)
+    hover: (item, monitor) => {
+      if (!monitor.isOver({ shallow: true })) return;
+
+      const next = computeNextPosition(item, monitor);
+      if (!next) return;
+
+      throttledPreviewMove(item.roomId, next);
+    },
+
+    // בשחרור: לשים מיקום סופי מדויק (בלי Throttle כדי לא לפספס את ה"פיקסל האחרון")
+    drop: (item, monitor) => {
+      throttledPreviewMove.cancel();
+
+      const next = computeNextPosition(item, monitor);
+      if (!next) return;
+
+      moveRoom(item.roomId, hotel.id, next);
     },
   });
 
-  // Cancel throttling on unmount
-  useEffect(() => {
-    return () => {
-      throttledMoveTable.cancel();
-    };
-  }, [throttledMoveTable]);
-
-
-
-
-
-  
+  const backgroundImage =
+    hotel.floorPlanImage && hotel.floorPlanImage.trim().length > 0
+      ? hotel.floorPlanImage
+      : "/img/pexels-pixabay-235985.jpg";
 
   return (
     <section
-      ref={(el) => {
-        drop(el as HTMLDivElement);
-        containerRef.current = el as HTMLDivElement;
-      }}
-      className="relative flex flex-col items-center justify-center px-4 mb-2"
-      aria-label={
-        areaSelect.name ? `Tables in ${areaSelect.name}` : "All tables"
-      }
+      className="relative flex flex-col items-center justify-center px-4 mb-4 bg-rose-50"
+      aria-label={hotel.name ? `Rooms in ${hotel.name}` : "Rooms"}
     >
-    <div>
-    {areaSelect.name && (
-        <div className="flex items-center max-w-2xl mx-auto mb-1  text-center">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mr-2">
-            {areaSelect.name}
-          </h2>
-           
-        </div>
-      )}
+      <div className="flex items-center max-w-3xl w-full mx-auto mb-2">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-800">{hotel.name}</h2>
+        <span className="ml-3 text-sm text-gray-500">Drag rooms to reposition.</span>
       </div>
+
+      {/* ✅ את ה-drop מחברים לכאן (ה־floorplan), לא ל־section */}
       <div
-        className="relative w-full h-[100vh] rounded-lg shadow-md break-all mb-6"
+        ref={(el) => {
+          floorplanRef.current = el;
+          drop(el);
+        }}
+        className="relative w-4/6 h-[85vh] rounded-lg shadow-md border bg-white overflow-hidden"
         style={{
-          backgroundImage: `url(${
-             "/img/pexels-pixabay-235985.jpg"
-          })`,
+          backgroundImage: `url(${backgroundImage})`,
           backgroundSize: "cover",
-          backgroundPosition: "center",
+          backgroundPosition: "70% 50%",
+          backgroundRepeat: "no-repeat",
         }}
       >
+        {/* Scale layer */}
         <div
           className="absolute inset-0"
           style={{
@@ -123,8 +144,8 @@ const TablesSection: React.FC<TablesSectionProps> = ({
             transformOrigin: "top left",
           }}
         >
-          {filteredTables.map((table) => (
-            <TableModal key={table.id} table={table} scale={scale} />
+          {rooms.map((room) => (
+            <RoomPin key={room.id} room={room} />
           ))}
         </div>
       </div>
@@ -132,4 +153,4 @@ const TablesSection: React.FC<TablesSectionProps> = ({
   );
 };
 
-export default React.memo(TablesSection);
+export default React.memo(RoomsSection);

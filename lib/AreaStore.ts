@@ -1,98 +1,102 @@
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
-import { BasicArea } from "@/graphql/generated";
+import type { BasicArea } from "@/graphql/generated";
+import type { GetTablesQuery } from "@/graphql/generated";
 
 /**
- * Extended shape of the store:
- * 1) The currently selected area (with 'id', 'name', 'floorPlanImage?'), or null
- * 2) The array of areas from the DB
- * 3) Scale logic for zooming
- * 4) moveTable or similar method for updating a table's position (can be local or call DB)
- * 5) setSelectedArea, clearSelectedArea, etc.
+ * Hotel Layout Store (client-side)
+ *
+ * IMPORTANT: We are NOT changing the backend schema.
+ * The backend still uses:
+ *   - Area  => Hotel (property)
+ *   - Table => Room
+ *
+ * This store provides HOTEL/ROOM vocabulary to the UI.
  */
-
-// If your store also needs to keep local track of Tables, add a type for them:
-export interface TableInStore {
+export type TableRow = GetTablesQuery["getTables"][number];
+export interface RoomInStore {
   id: string;
-  tableNumber: number;
-  areaId: string;
+  roomNumber: number; // backend: tableNumber
+  hotelId: string; // backend: areaId
   position: { x: number; y: number };
-  dirty?: boolean; // optional: track if table was modified
-    diners: number;
-   reserved: boolean;
-    specialRequests: string[];
-   createdAt: Date;
-   updatedAt: Date;
+
+  /** Maximum guests (capacity). Backend: diners */
+  capacity: number;
+
+  /** Simple occupancy flag. Backend: reserved */
+  isOccupied: boolean;
+
+  /** Notes / requests. Backend: specialRequests */
+  notes: string[];
+
+  /** Backend scalars are usually ISO strings */
+  createdAt: string;
+  updatedAt: string;
+
+  /** Marks layout changes (drag/drop). Saved via "Save Layout". */
+  dirty?: boolean;
 }
 
-type AreaStore = {
-  // ---------- Areas and Selection ----------
-  selectedArea: BasicArea | null;
-  areas: BasicArea[];
+export type HotelInStore = BasicArea;
 
-  setAreas: (fetchedAreas: BasicArea[]) => void;
-  setSelectedArea: (areaIdOrName: string) => void;
-  clearSelectedArea: () => void;
+type HotelStore = {
+  // ---------- Hotels (Areas) ----------
+  selectedHotel: HotelInStore | null;
+  hotels: HotelInStore[];
 
-  // ---------- Scale Logic ----------
+  setHotels: (fetchedHotels: HotelInStore[]) => void;
+  setSelectedHotel: (hotelIdOrName: string) => void;
+  clearSelectedHotel: () => void;
+
+  // ---------- Zoom ----------
   scale: number;
   scaleLimits: { min: number; max: number };
   setScale: (newScale: number) => void;
   adjustScale: (delta: number) => void;
 
-  // ---------- Table Data & Moving Logic ----------
-  // Optional: local array of tables if you store them in Zustand
-  tables: TableInStore[];
-  setTables: (t: TableInStore[]) => void;
+  // ---------- Rooms (Tables) ----------
+  rooms: RoomInStore[];
+  setRooms: (rooms: RoomInStore[]) => void;
+  removeRoom: (roomId: string) => void;
 
-  /**
-   * Use a stable 'id' to update table location or area.
-   * The newAreaId could be an actual area ID. 
-   */
-  moveTable: (
-    tableId: string,
-    newAreaId: string,
+  updateRoom: (roomId: string, patch: Partial<Omit<RoomInStore, "id">>) => void;
+
+  moveRoom: (
+    roomId: string,
+    newHotelId: string,
     newPosition: { x: number; y: number }
   ) => void;
 
-  // ---------- Persistence ----------
-  persistAreaState: () => void;
+  // ---------- Manual Persistence Helper ----------
+  persistHotelState: () => void;
 };
 
-export const useRestaurantStore = create<AreaStore>()(
+export const useHotelStore = create<HotelStore>()(
   persist(
     devtools((set, get) => ({
-      // ---------- State Initialization ----------
-      selectedArea: null,
-      areas: [],
+      // ---------- State ----------
+      selectedHotel: null,
+      hotels: [],
 
-      // Scale logic
       scale: 1,
       scaleLimits: { min: 0.5, max: 2 },
 
-      // If you want to keep local table data:
-      tables: [],
-      setTables: (fetchedTables) => {
-        set({ tables: fetchedTables });
-      },
+      rooms: [],
 
-      // ---------- Actions / Methods ----------
+      // ---------- Actions ----------
+      setHotels: (fetchedHotels) => set({ hotels: fetchedHotels }),
 
-      setAreas: (fetchedAreas) => {
-        set({ areas: fetchedAreas });
-      },
-
-      setSelectedArea: (areaIdOrName) => {
-        const { areas } = get();
-        const found = areas.find(
-          (a) => a.id === areaIdOrName || a.name === areaIdOrName
+      setSelectedHotel: (hotelIdOrName) => {
+        const { hotels } = get();
+        const found = hotels.find(
+          (h) => h.id === hotelIdOrName || h.name === hotelIdOrName
         );
         if (!found) {
-          console.warn(`Area "${areaIdOrName}" not found in store.areas`);
+          console.warn(`Hotel "${hotelIdOrName}" not found in store.hotels`);
           return;
         }
         set({
-          selectedArea: {
+          selectedHotel: {
             id: found.id,
             name: found.name,
             floorPlanImage: found.floorPlanImage ?? null,
@@ -101,15 +105,11 @@ export const useRestaurantStore = create<AreaStore>()(
         });
       },
 
-      clearSelectedArea: () => set({ selectedArea: null }),
+      clearSelectedHotel: () => set({ selectedHotel: null }),
 
       setScale: (newScale) => {
-        const { scaleLimits } = get();
-        // clamp the new scale
-        const clampedScale = Math.max(
-          scaleLimits.min,
-          Math.min(scaleLimits.max, newScale)
-        );
+        const { min, max } = get().scaleLimits;
+        const clampedScale = Math.max(min, Math.min(max, newScale));
         set({ scale: clampedScale });
       },
 
@@ -118,45 +118,92 @@ export const useRestaurantStore = create<AreaStore>()(
         setScale(scale + delta);
       },
 
-      /**
-       * 6) moveTable
-       * We'll do a local update if 'tables' are stored here.
-       * Or you can do nothing local and just rely on server re-fetch.
-       */
-      moveTable: (tableId, newAreaId, newPosition) => {
+      setRooms: (rooms) => set({ rooms }),
+
+      removeRoom: (roomId) =>
+        set((state) => ({
+          rooms: state.rooms.filter((r) => r.id !== roomId),
+        })),
+
+      updateRoom: (roomId, patch) =>
+        set((state) => ({
+          rooms: state.rooms.map((r) =>
+            r.id === roomId ? { ...r, ...patch } : r
+          ),
+        })),
+
+      moveRoom: (roomId, newHotelId, newPosition) => {
         set((state) => {
-          const updatedTables = state.tables.map((t) => {
-            if (t.id === tableId) {
-              const positionChanged =
-                t.position.x !== newPosition.x || t.position.y !== newPosition.y;
-              const areaChanged = t.areaId !== newAreaId;
-      
-              if (positionChanged || areaChanged) {
-                return { ...t, areaId: newAreaId, position: newPosition, dirty: true };
-              }
-            }
-            return t;
+          const updatedRooms = state.rooms.map((r) => {
+            if (r.id !== roomId) return r;
+
+            const positionChanged =
+              r.position.x !== newPosition.x || r.position.y !== newPosition.y;
+            const hotelChanged = r.hotelId !== newHotelId;
+
+            if (!positionChanged && !hotelChanged) return r;
+
+            return {
+              ...r,
+              hotelId: newHotelId,
+              position: newPosition,
+              dirty: true,
+            };
           });
-          return { tables: updatedTables };
+
+          return { rooms: updatedRooms };
         });
       },
-      
 
-      persistAreaState: () => {
+      persistHotelState: () => {
         try {
-          const { areas, selectedArea, scale } = get();
+          const { hotels, selectedHotel, scale } = get();
           localStorage.setItem(
-            "restaurantAreaState",
-            JSON.stringify({ areas, selectedArea, scale })
+            "hotelLayoutState",
+            JSON.stringify({ hotels, selectedHotel, scale })
           );
         } catch (error) {
-          console.error("Failed to persist area state:", error);
+          console.error("Failed to persist hotel state:", error);
         }
       },
     })),
     {
-      name: "restaurant-areas",
+      name: "hotel-layout-store",
       skipHydration: true,
+      /**
+       * Persist only UI preferences (selection + zoom).
+       * Hotels/rooms are fetched from the backend.
+       */
+      partialize: (state) => ({
+        selectedHotel: state.selectedHotel,
+        scale: state.scale,
+      }),
     }
   )
 );
+
+/**
+ * Backward compatibility exports.
+ * You can remove these once all imports are migrated.
+ */
+export const useRestaurantStore = useHotelStore;
+export type TableInStore = RoomInStore;
+
+export function tableRowToRoomInStore(t: TableRow): RoomInStore {
+  const pos = (t.position ?? {}) as any;
+
+  return {
+    id: t.id,
+    roomNumber: t.tableNumber,      // Table.tableNumber -> Room.roomNumber
+    hotelId: t.areaId,              // Table.areaId -> Room.hotelId
+    position: {
+      x: typeof pos.x === "number" ? pos.x : 0,
+      y: typeof pos.y === "number" ? pos.y : 0,
+    },
+    capacity: Number(t.diners ?? 0), // Table.diners -> Room.capacity
+    isOccupied: Boolean(t.reserved), // Table.reserved -> Room.isOccupied
+    notes: Array.isArray(t.specialRequests) ? t.specialRequests : [], // Table.specialRequests -> Room.notes
+    createdAt: String(t.createdAt ?? ""),
+    updatedAt: String(t.updatedAt ?? ""),
+  };
+}

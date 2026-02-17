@@ -19,17 +19,12 @@ export default async function Home() {
       <Header user={user as User} />
       <SideBar user={user as User} />
   
-      {user?.role !== "WAITER" && user?.role !== "MANAGER" ? (
-        <>
-          <HeroSection />
-          <Promos />
-        </>
-      ) : (
-        <ZoneRestaurant />
-      )}
-  
-      <Categories />
-      <MenuSection user={user as User} />
+    
+      
+          {/* <HeroSection /> */}
+    
+         {(user?.role === "ADMIN" || user?.role === "MANAGER") && <ZoneRestaurant />}
+ 
       <Footer />
     </main>
   )

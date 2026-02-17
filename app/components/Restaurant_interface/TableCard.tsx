@@ -1,71 +1,68 @@
 "use client";
 
-import React, { useState } from "react";
-import{TableInStore}from "@/lib/AreaStore";
-type TableCardProps = {
-  table: TableInStore;
-};
+import React from "react";
 
-const TableCard: React.FC<TableCardProps> = ({ table }) => {
-  const { tableNumber, diners } = table;
- const [reserved, setReserved] = useState(table.reserved || false); // Reservation state
-   // Handle reservation toggle
-   const handleToggleReservation = () => {
-    setReserved(!reserved);
-  };
+import type { RoomInStore } from "@/lib/AreaStore";
+
+import ToggleOccupancy from "./Table_Settings/ToggleReservation";
+import RoomBookings from "./Table_Settings/TableReservations";
+import EditRoomModal from "./CRUD_Zone-CRUD_Table/EditTableModal";
+import DeleteRoomModal from "./CRUD_Zone-CRUD_Table/DeleteTableModal";
+import { RoomServiceQuickBtn } from "./Table_Settings/RoomServiceQuickBtn";
+
+
+interface RoomCardProps {
+  room: RoomInStore;
+}
+
+/**
+ * RoomCard (list view)
+ * A compact summary card for a room in a hotel.
+ */
+const RoomCard: React.FC<RoomCardProps> = ({ room }) => {
+  const statusLabel = room.isOccupied ? "Occupied" : "Available";
+  const statusClass = room.isOccupied
+    ? "bg-red-100 text-red-700"
+    : "bg-green-100 text-green-700";
+
   return (
-  
-    <div
-    className={`relative ${
-      diners <= 4 ? "w-40 h-40 rounded-full" : "w-48 h-32 rounded-lg"
-    } mx-auto bg-gradient-to-t from-gray-300 via-gray-200 to-gray-100 shadow-inner flex items-center justify-center`}
-  >
-    <div className="flex-wrap  items-center justify-center text-center">
-    <h3 className=" text-sm font-bold text-gray-600  ">
-      Table #{tableNumber}
-    </h3>
-     {/* Reservation Toggle */}
-     <button
-        onClick={handleToggleReservation}
-        className={` rounded-lg text-xs  shadow  ${
-          reserved
-            ? "bg-red-500 text-white hover:bg-red-600"
-            : "bg-green-500 text-white hover:bg-green-600"
-        }`}
-        aria-label={`Mark table ${tableNumber} as ${
-          reserved ? "available" : "reserved"
-        }`}
-      >
-        {reserved ? "Release Table" : "Reserve Table"}
-      </button>
-      </div>
-    {Array.from({ length: diners }).map((_, index) => {
-      const angle = (index / diners) * 360;
-      const radius = diners <= 4 ? 50 : 60;
-      const x = radius * Math.cos((angle * Math.PI) / 180);
-      const y = radius * Math.sin((angle * Math.PI) / 180);
-      
-      return (
-        <div
-        
-          key={index}
-          className="absolute w-6 h-6 bg-blue-500 text-white rounded-full shadow-md flex items-center justify-center text-xs font-bold"
-          style={{
-            transform: `translate(${x}px, ${y}px)`,
-          }}
-          aria-label={`Seat ${index + 1}`}
-        >
-          {index + 1}
-           
+    <div className="relative bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h4 className="text-base font-semibold text-gray-800">
+            Room {room.roomNumber}
+            {room.dirty ? (
+              <span className="ml-2 text-xs text-orange-600 font-medium">
+                • unsaved
+              </span>
+            ) : null}
+          </h4>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Max guests: {room.capacity}
+          </p>
         </div>
-        
-      );
-      
-    })}
-  </div>
-    
-   
+
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-medium px-2 py-0.5 rounded ${statusClass}`}>
+            {statusLabel}
+          </span>
+          <EditRoomModal room={room} />
+          <DeleteRoomModal room={room} />
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ToggleOccupancy room={room} />
+
+      </div>
+
+      {room.notes?.length ? (
+        <p className="mt-3 text-xs text-gray-600 line-clamp-2">
+          <span className="font-semibold">Notes:</span> {room.notes.join(", ")}
+        </p>
+      ) : null}
+    </div>
   );
 };
 
-export default React.memo(TableCard);
+export default React.memo(RoomCard);

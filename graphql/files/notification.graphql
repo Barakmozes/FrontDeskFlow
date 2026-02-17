@@ -1,0 +1,93 @@
+
+# graphql/files/notification.graphql
+
+query GetNotifications {
+  getNotifications {
+    id
+    type
+    message
+    priority
+    status
+    userEmail
+    createdAt
+    updatedAt
+    user {
+      id
+      email
+      name
+      role
+    }
+  }
+}
+
+query GetUserNotifications($userEmail: String!) {
+  getUserNotifications(userEmail: $userEmail) {
+    id
+    type
+    message
+    priority
+    status
+    userEmail
+    createdAt
+    updatedAt
+    user {
+      id
+      email
+      name
+      role
+    }
+  }
+}
+
+mutation AddNotification(
+  $message: String!
+  $type: String!
+  $userEmail: String!
+  $priority: NotificationPriority
+  $status: NotificationStatus
+) {
+  addNotification(
+    message: $message
+    type: $type
+    userEmail: $userEmail
+    priority: $priority
+    status: $status
+  ) {
+    id
+    createdAt
+  }
+}
+
+mutation UpdateNotification(
+  $updateNotificationId: String!
+  $message: String
+  $priority: NotificationPriority
+  $status: NotificationStatus
+) {
+  updateNotification(
+    id: $updateNotificationId
+    message: $message
+    priority: $priority
+    status: $status
+  ) {
+    id
+    message
+    priority
+    status
+    updatedAt
+  }
+}
+
+mutation MarkNotificationAsRead($markNotificationAsReadId: String!) {
+  markNotificationAsRead(id: $markNotificationAsReadId) {
+    id
+    status
+    updatedAt
+  }
+}
+
+mutation DeleteNotification($deleteNotificationId: String!) {
+  deleteNotification(id: $deleteNotificationId) {
+    id
+  }
+}

@@ -20,6 +20,7 @@ query GetArea($getAreaId: String!) {
 query GetAreas {
   getAreas {
     updatedAt
+    createdAt
     name
     id
     floorPlanImage
@@ -62,3 +63,10 @@ query GetAreasNameDescription($orderBy: AreaOrderByInput) {
     name
   }
 }
+
+
+
+
+# /..npov
+
+

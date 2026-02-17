@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@urql/next";
-import { Table } from "@prisma/client";
-import toast from "react-hot-toast";
-import { FaCalendarCheck } from "react-icons/fa";
+
 import Modal from "../../Common/Modal";
 
 import {
@@ -13,196 +11,111 @@ import {
   GetTableReservationsQueryVariables,
 } from "@/graphql/generated";
 
-/**
- * Props:
- *  - table: The table object, including table.id and table.tableNumber
- */
-interface TableReservationsProps {
-  table: Table;
+import type { RoomInStore } from "@/lib/AreaStore";
+
+interface RoomBookingsProps {
+  room: RoomInStore;
 }
 
 /**
- * TableReservations
- * 
- * Shows a button to open a modal. When opened *the first time*,
- * it fetches reservations for "today" (by default) and displays them
- * if found. The user can also pick another date to fetch more data.
+ * RoomBookings
+ * NOTE: This is still backed by the existing restaurant reservation model.
+ * Client-side mapping only:
+ *  - TableReservation -> RoomBooking (for now)
  */
-const TableReservations: React.FC<TableReservationsProps> = ({ table }) => {
-  // -- Local states --
-  const todayString = new Date().toISOString().split("T")[0]; // e.g. "2025-01-10"
-  const [selectedDate, setSelectedDate] = useState<string>(todayString);
+const RoomBookings: React.FC<RoomBookingsProps> = ({ room }) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  /**
-   * We only want to fetch automatically on the *first open* of the modal.
-   * Use a flag to ensure we don't re-run this logic on subsequent opens.
-   */
-  const [didFirstOpen, setDidFirstOpen] = useState(false);
+  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const [date, setDate] = useState<string>(today);
 
-  // GraphQL: We start paused = true (so it won't fetch on mount).
-  const [resResult, reexecuteQuery] = useQuery<
+  const [{ data, fetching, error }, reexecuteQuery] = useQuery<
     GetTableReservationsQuery,
     GetTableReservationsQueryVariables
   >({
     query: GetTableReservationsDocument,
-    variables: { date: selectedDate, tableId: table.id },
-    pause: true,
+    variables: { date, tableId: room.id },
+    pause: !isOpen,
   });
 
-  const { data, fetching, error } = resResult;
-
-  /**
-   * On first open, run the query once.
-   * If user re-opens the modal after closing, no auto-fetch.
-   */
-  const openModal = useCallback(() => {
-    setIsOpen(true);
-    if (!didFirstOpen) {
-      // On first open, load the reservations for today's date
-      reexecuteQuery({ requestPolicy: "network-only" });
-      setDidFirstOpen(true);
-    }
-  }, [didFirstOpen, reexecuteQuery]);
-
-  const closeModal = useCallback(() => {
-    setIsOpen(false);
-  }, []);
-
-  /**
-   * If user changes date inside the modal, they can re-fetch manually if desired.
-   * (Below, we add a "Search" button to do that.)
-   */
-  const handleFetchReservations = useCallback(() => {
-    reexecuteQuery({ requestPolicy: "network-only" });
-  }, [reexecuteQuery]);
-
-  // Show error if any
+  // Re-fetch whenever modal opens or date changes.
   useEffect(() => {
-    if (error) {
-      toast.error("Failed to load reservations: " + error.message);
-    }
-  }, [error]);
+    if (!isOpen) return;
+    reexecuteQuery({ requestPolicy: "network-only" });
+  }, [isOpen, date, reexecuteQuery]);
 
-  /**
-   * Format date/time in a user-friendly manner
-   */
-  const formatDateTime = (isoString: string) => {
-    try {
-      const dateObj = new Date(isoString);
-      // Example: "Jan 10, 2025, 4:35 PM"
-      return dateObj.toLocaleString("en-US", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
-    } catch {
-      return isoString; // fallback if parsing fails
-    }
-  };
-
-  /**
-   * Renders the reservations in a table or an empty state message
-   */
-  const renderReservations = () => {
-    if (fetching) {
-      return (
-        <p className="text-sm text-blue-500 mt-2">Loading reservations...</p>
-      );
-    }
-    if (!data?.getTableReservations || data.getTableReservations.length === 0) {
-      return (
-        <p className="text-sm text-gray-500 mt-3">
-          No reservations found for {selectedDate}.
-        </p>
-      );
-    }
-
-    return (
-      <div className="overflow-x-auto mt-3">
-        <table className="min-w-full text-xs sm:text-sm border border-gray-300">
-          <thead className="bg-gray-100 text-gray-700">
-            <tr>
-              <th className="p-2 border border-gray-300">Reservation Time</th>
-              <th className="p-2 border border-gray-300">Diners</th>
-              <th className="p-2 border border-gray-300">Status</th>
-              <th className="p-2 border border-gray-300">Created By</th>
-              <th className="p-2 border border-gray-300">User Email</th>
-              <th className="p-2 border border-gray-300">Name</th>
-              <th className="p-2 border border-gray-300">Phone</th>
-              <th className="p-2 border border-gray-300">Reservation ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.getTableReservations.map((res) => {
-              const dateDisplay = formatDateTime(res.reservationTime);
-              return (
-                <tr key={res.id} className="hover:bg-gray-50">
-                  <td className="p-2 border border-gray-300">{dateDisplay}</td>
-                  <td className="p-2 border border-gray-300">
-                    {res.numOfDiners}
-                  </td>
-                  <td className="p-2 border border-gray-300">{res.status}</td>
-                  <td className="p-2 border border-gray-300">{res.createdBy}</td>
-                  <td className="p-2 border border-gray-300">{res.userEmail}</td>
-                  <td className="p-2 border border-gray-300">
-                    {res.user?.profile?.name ?? "-"}
-                  </td>
-                  <td className="p-2 border border-gray-300">
-                    {res.user?.profile?.phone ?? "-"}
-                  </td>
-                  <td className="p-2 border border-gray-300">{res.id}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
+  const bookings = data?.getTableReservations ?? [];
 
   return (
     <>
-      {/* The trigger button */}
       <button
-        onClick={openModal}
-        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 transition"
-        aria-label="View Reservations"
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="text-sm bg-gray-200 text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-300 transition"
+        aria-label="View bookings"
       >
-        <FaCalendarCheck className="h-3 w-3 ml-1 " />
-        <span className="text-xs font-medium">Reservations</span>
+        View Bookings
       </button>
 
-      {/* The modal */}
-      <Modal isOpen={isOpen} closeModal={closeModal}>
-        <div className="p-4 bg-white rounded-lg shadow max-w-md mx-auto">
-          {/* Title */}
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
-            Table #{table.tableNumber} Reservations
-          </h2>
-
-          {/* Date + Search row */}
-          <div className="mt-3 flex items-center gap-2">
+      <Modal
+        isOpen={isOpen}
+        closeModal={() => setIsOpen(false)}
+        title={`Room ${room.roomNumber} — Bookings`}
+      >
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700" htmlFor="booking-date">
+              Date
+            </label>
             <input
+              id="booking-date"
               type="date"
-              className="px-2 py-1 border rounded text-sm"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              aria-label="Select date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="border rounded px-2 py-1 text-sm"
             />
-            <button
-              onClick={handleFetchReservations}
-              className="px-3 py-1 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition"
-            >
-              Search
-            </button>
           </div>
 
-          {/* Table or empty/loading state */}
-          {renderReservations()}
+          {fetching ? (
+            <p className="text-sm text-gray-500">Loading bookings…</p>
+          ) : error ? (
+            <p className="text-sm text-red-600">Error: {error.message}</p>
+          ) : bookings.length === 0 ? (
+            <p className="text-sm text-gray-500">No bookings found for this date.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-2 py-1 border text-left">Time</th>
+                    <th className="px-2 py-1 border text-left">Guests</th>
+                    <th className="px-2 py-1 border text-left">Status</th>
+                    <th className="px-2 py-1 border text-left">Guest</th>
+                    <th className="px-2 py-1 border text-left">Phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((b) => (
+                    <tr key={b.id}>
+                      <td className="px-2 py-1 border">{b.reservationTime}</td>
+                      <td className="px-2 py-1 border">{b.numOfDiners}</td>
+                      <td className="px-2 py-1 border">{b.status}</td>
+                      <td className="px-2 py-1 border">
+                        {b.user?.profile?.name ?? b.userEmail ?? "—"}
+                      </td>
+                      <td className="px-2 py-1 border">
+                        {b.user?.profile?.phone ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </Modal>
     </>
   );
 };
 
-export default TableReservations;
+export default RoomBookings;

@@ -9,7 +9,7 @@ import { builder } from "@/graphql/builder";
  *
  * Reflects the Prisma Table model:
  *  - id: String (cuid)
- *  - tableNumber: Int (unique)
+ *  - tableNumber: Int 
  *  - diners: Int
  *  - reserved: Boolean (default: false)
  *  - specialRequests: String[] (default: [])
