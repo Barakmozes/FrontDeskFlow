@@ -1,18 +1,18 @@
 /**
  * types.ts
- * 
+ *
  * קובץ מרכזי המגדיר טיפוסים (Types) נפוצים בפרויקט לצורך אחידות, תחזוקה נוחה והשלמה אוטומטית (IntelliSense).
  * כולל טיפוסים ל:
  * - פריטי שיווק וקטגוריות תצוגה
  * - ניהול מצבים של מודלים ותפריטים צדדיים (UI State)
  * - עגלת קניות ופעולות עליה
  * - תמיכה בריבוי שפות
- * 
+ *
  * טיפוסים אלו משמשים את ממשק המשתמש, ניהול מצב (Store), ואינטראקציה עם מודלים מ-Prisma.
- * graphql\generated.ts שהוגדרו כאן בקובץ או בפריזמה לקוח או ב (Types)כמו כן אפשר לבחור להשתמש 
+ * graphql\generated.ts שהוגדרו כאן בקובץ או בפריזמה לקוח או ב (Types)כמו כן אפשר לבחור להשתמש
  */
 
-import { Menu } from "@prisma/client";
+import type { Menu, Role } from "@prisma/client";
 
 // Promo and Category Types
 export type PromoTypes = {
@@ -44,13 +44,34 @@ export type SideBarDrawerStore = {
   onSideBarClose: () => void;
 };
 
-// Cart Types
-type CartOptions = {
+// =========================
+// Cart Types (Solution #2)
+// =========================
+
+/**
+ * שדות שהם “התנהגות עגלה” ולא שייכים ל-DB
+ */
+export type CartOptions = {
   quantity: number;
   instructions: string;
   prepare: string;
 };
-export type CartItemType = Menu & CartOptions;
+
+/**
+ * CartMenuSnapshot
+ * במקום לקחת Menu מלא (שכולל createdAt/updatedAt ועוד), אנחנו שומרים בעגלה רק מה שה-UI צריך.
+ * שדות שיכולים להיות שימושיים אבל לא תמיד מגיעים מה-API – נשמרים כאופציונליים (Partial).
+ */
+export type CartMenuSnapshot = Pick<
+  Menu,
+  "id" | "title" | "shortDescr" | "price" | "sellingPrice" | "image" | "category"
+> &
+  Partial<Pick<Menu, "longDescr" | "prepType" | "onPromo" | "categoryId">>;
+
+/**
+ * CartItemType = snapshot קטן של Menu + שדות עגלה
+ */
+export type CartItemType = CartMenuSnapshot & CartOptions;
 
 /**
  * CartType
@@ -60,8 +81,9 @@ export type CartItemType = Menu & CartOptions;
 export type CartType = {
   menus: CartItemType[];
   tableId?: string;
-  tableNumber?: number; 
+  tableNumber?: number;
 };
+
 /**
  * CartActionTypes
  * - Existing actions remain unchanged
@@ -82,8 +104,19 @@ export type CartActionTypes = {
 
 /**
  * LangCode
- *יוניון
+ * יוניון
  * • Two-letter codes for supported locales.
  * • Extend as needed (e.g. 'es', 'fr').
  */
-export type LangCode = 'en' | 'he'
+export type LangCode = "en" | "he";
+
+export type UserRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  emailVerified: string | null; // אם אתה מסריאלייז ללקוח
+  image: string | null;
+  role: Role;
+  createdAt: string;
+  updatedAt: string;
+};

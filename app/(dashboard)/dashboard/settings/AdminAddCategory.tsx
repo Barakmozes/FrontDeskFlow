@@ -1,85 +1,98 @@
-import { HiPlus } from "react-icons/hi2";
+"use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
+import toast from "react-hot-toast";
+import { useMutation } from "@urql/next";
 
-import { useRouter } from "next/navigation";
 import Modal from "@/app/components/Common/Modal";
 import UploadImg from "../Components/UploadImg";
+import { SupabaseImageUpload } from "@/lib/supabaseStorage";
 
-const AdminAddCategory = () => {
-  const router = useRouter();
+import {
+  AddCategoryDocument,
+  AddCategoryMutation,
+  AddCategoryMutationVariables,
+} from "@/graphql/generated";
+
+export default function AdminAddCategory({ onChanged }: { onChanged: () => void }) {
   const [isOpen, setIsOpen] = useState(false);
+
+  const [{ fetching }, addCategory] = useMutation<AddCategoryMutation, AddCategoryMutationVariables>(
+    AddCategoryDocument
+  );
+
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [image, setImage] = useState("");
+  const [imgFile, setImgFile] = useState<File | null>(null);
 
-  const closeModal = () => setIsOpen(false);
-  const OpenModal = () => setIsOpen(true);
-  const getCategoryImgFile = async (file: File) => {
-    console.log(file);
-    
+  const openModal = () => setIsOpen(true);
+  const closeModal = () => {
+    setIsOpen(false);
+    setTitle("");
+    setDesc("");
+    setImgFile(null);
   };
 
+  async function submit() {
+    if (!title.trim()) return toast.error("Title is required.");
+    if (!desc.trim()) return toast.error("Description is required.");
+    if (!imgFile) return toast.error("Image is required.");
 
+    const url = await SupabaseImageUpload(imgFile);
+    if (!url) return toast.error("Image upload failed.");
+
+    const res = await addCategory({
+      title: title.trim(),
+      desc: desc.trim(),
+      img: url,
+    });
+
+    if (res.error) {
+      console.error(res.error);
+      toast.error("Failed to create category.");
+      return;
+    }
+
+    toast.success("Category created.");
+    onChanged();
+    closeModal();
+  }
 
   return (
     <>
-      <button
-        type="button"
-        className="text-white inline-flex items-center whitespace-nowrap bg-green-600
-         hover:bg-green-700  font-medium rounded-lg text-sm px-5 py-2.5 text-center "
-        onClick={OpenModal}
-      >
-        <HiPlus className="mr-1 -ml-1 w-4 h-4" />
+      <button onClick={openModal} className="form-button">
         Add Category
       </button>
-      <Modal isOpen={isOpen} title={title} closeModal={closeModal}>
-        <form>
-          <div className="grid gap-4 mb-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="name" className="form-label ">
-                Title
-              </label>
-              <input
-                type="text"
-                name="name"
-                id="name"
-                className="form-input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="price" className="form-label ">
-                Description
-              </label>
-              <input
-                type="text"
-                name="desc"
-                id="desc"
-                className="form-input"
-                placeholder="Description"
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-              />
+
+      <Modal isOpen={isOpen} title="Add Category" closeModal={closeModal}>
+        <div className="space-y-4">
+          <div>
+            <label className="form-label">Title</label>
+            <input className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="form-label">Description</label>
+            <input className="formInput" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="form-label">Image</label>
+            <div className="rounded-md border bg-gray-50 p-3">
+              <UploadImg handleCallBack={(f: File) => setImgFile(f)} id="cat-img" />
             </div>
           </div>
 
-          <UploadImg handleCallBack={getCategoryImgFile} id="addCategory" />
-
-          <button
-            type="submit"
-            className="text-white inline-flex items-center bg-green-600
-         hover:bg-green-700 focus:ring-4 focus:outline-none focus:ring-green-300
-          font-medium rounded-lg text-sm px-5 py-2.5 text-center "
-          >
-            <HiPlus className="mr-1 -ml-1 w-4 h-4" fill="currentColor" />
-            Add Category
-          </button>
-        </form>
+          <div className="flex justify-end gap-2 pt-2">
+            <button className="rounded-md border px-4 py-2 text-sm hover:bg-gray-50" onClick={closeModal}>
+              Cancel
+            </button>
+            <button className="form-button" onClick={submit} disabled={fetching}>
+              {fetching ? "Saving…" : "Create"}
+            </button>
+          </div>
+        </div>
       </Modal>
     </>
   );
-};
-
-export default AdminAddCategory;
+}

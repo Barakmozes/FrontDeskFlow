@@ -1,20 +1,25 @@
-// graphql/schema/User/enum.ts
-
 import { builder } from "@/graphql/builder";
 
 /**
- * Role Enum
- * Defines the roles of users in the system with varying levels
- * of access and responsibilities.
+ * Role Enum (Hotel + Legacy)
+ * Keep legacy values until DB rows are migrated.
  */
 export const Role = builder.enumType("Role", {
   values: [
-    "USER",      // Regular customer
-    "ADMIN",     // System administrator
-    "DELIVERY",  // Delivery personnel
-    "WAITER",    // Restaurant staff (waiter)
-    "CHEF",      // Kitchen staff
-    "MANAGER",   // Restaurant manager
+    // Guest
+    "USER",
+
+    // Hotel roles
+    "RECEPTION",
+    "HOUSEKEEPING",
+    "ACCOUNTING",
+    "MANAGER",
+    "ADMIN",
+
+    // Legacy restaurant roles (temporary)
+    "DELIVERY",
+    "WAITER",
+    "CHEF",
   ] as const,
-  description: "User roles in the system",
+  description: "User roles in the system (hotel roles + legacy roles during migration)",
 });

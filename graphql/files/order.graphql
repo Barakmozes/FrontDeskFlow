@@ -1,3 +1,5 @@
+# graphql/files/order.graphql
+
 query GetOrders($first: Int, $after: ID) {
   getOrders(first: $first, after: $after) {
     pageInfo {
@@ -7,20 +9,21 @@ query GetOrders($first: Int, $after: ID) {
     edges {
       cursor
       node {
-        cart
-        deliveryAddress
-        deliveryFee
-        deliveryTime
-        discount
         id
-        note
-        orderDate
         orderNumber
+        orderDate
+        createdAt
+        updatedAt
+        status
         paid
         paymentToken
-        serviceFee
-        status
         total
+        serviceFee
+        deliveryFee
+        discount
+        note
+        deliveryAddress
+        tableId
         userEmail
         userName
         userPhone
@@ -29,53 +32,94 @@ query GetOrders($first: Int, $after: ID) {
   }
 }
 
+query GetOrder($getOrderId: String!) {
+  getOrder(id: $getOrderId) {
+    id
+    userName
+    userEmail
+    userPhone
+    orderNumber
+    orderDate
+    status
+    cart
+    total
+    paid
+    paymentToken
+    discount
+    serviceFee
+    deliveryAddress
+    deliveryTime
+    note
+    tableId
+    createdAt
+    updatedAt
+  }
+}
+
+mutation DeleteOrder($deleteOrderId: String!) {
+  deleteOrder(id: $deleteOrderId) {
+    id
+  }
+}
+
+mutation EditOrder($editOrderId: String!, $status: OrderStatus!, $deliveryTime: DateTime) {
+  editOrder(id: $editOrderId, status: $status, deliveryTime: $deliveryTime) {
+    id
+  }
+}
+
 mutation AddOrder(
-  $cart: JSON!
-  $deliveryAddress: String!
-  $deliveryFee: Float!
-  $orderNumber: String!
-  $serviceFee: Float!
-  $total: Float!
-  $userEmail: String!
-  $userName: String!
+  $cart: JSON!,
+  $deliveryAddress: String!,
+  $deliveryFee: Float!,
+  $discount: Float,
+  $note: String,
+  $orderNumber: String!,
+  $paymentToken: String,
+  $serviceFee: Float!,
+  $total: Float!,
+  $userEmail: String!,
+  $userName: String!,
   $userPhone: String!
-  $discount: Float
-  $note: String
-  $paymentToken: String
 ) {
   addOrder(
-    cart: $cart
-    deliveryAddress: $deliveryAddress
-    deliveryFee: $deliveryFee
-    orderNumber: $orderNumber
-    serviceFee: $serviceFee
-    total: $total
-    userEmail: $userEmail
-    userName: $userName
+    cart: $cart,
+    deliveryAddress: $deliveryAddress,
+    deliveryFee: $deliveryFee,
+    discount: $discount,
+    note: $note,
+    orderNumber: $orderNumber,
+    paymentToken: $paymentToken,
+    serviceFee: $serviceFee,
+    total: $total,
+    userEmail: $userEmail,
+    userName: $userName,
     userPhone: $userPhone
-    discount: $discount
-    note: $note
-    paymentToken: $paymentToken
   ) {
     id
+    createdAt
+    userName
+    userEmail
+    userPhone
+    orderNumber
+    orderDate
+    status
+    cart
+    total
+    paid
+    deliveryAddress
+    deliveryFee
+    deliveryTime
+    note
+    discount
+    serviceFee
+    paymentToken
+    tableId
   }
 }
 
-mutation EditOrderOnPayment(
-  $editOrderOnPaymentId: String!
-  $paymentToken: String
-) {
+mutation EditOrderOnPayment($editOrderOnPaymentId: String!, $paymentToken: String) {
   editOrderOnPayment(id: $editOrderOnPaymentId, paymentToken: $paymentToken) {
-    id
-  }
-}
-
-mutation EditOrder(
-  $editOrderId: String!
-  $status: OrderStatus!
-  $deliveryTime: DateTime
-) {
-  editOrder(id: $editOrderId, status: $status, deliveryTime: $deliveryTime) {
     id
   }
 }

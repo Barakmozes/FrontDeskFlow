@@ -58,3 +58,15 @@ mutation EditProfile(
     id
   }
 }
+query GetUsers {
+  getUsers {
+    id
+    email
+    name
+    role
+    profile {
+      name
+      phone
+    }
+  }
+}

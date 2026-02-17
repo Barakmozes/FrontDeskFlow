@@ -1,0 +1,115 @@
+
+# graphql/files/reservation.graphql
+
+
+query GetReservation($getReservationId: String!) {
+  getReservation(id: $getReservationId) {
+    id
+    status
+    reservationTime
+    numOfDiners
+    userEmail
+    createdBy
+    createdAt
+    updatedAt
+
+    tableId
+    table {
+      id
+      tableNumber
+      areaId
+      reserved
+      specialRequests
+    }
+
+    user {
+      profile {
+        name
+        phone
+      }
+    }
+  }
+}
+
+
+query GetReservations($status: ReservationStatus) {
+  getReservations(status: $status) {
+    id
+    reservationTime
+    status
+    numOfDiners
+    userEmail
+    createdBy
+    createdByUserEmail
+
+    tableId
+    table {
+      id
+      tableNumber
+      areaId
+      reserved
+      specialRequests
+    }
+
+    user {
+      profile {
+        name
+        phone
+      }
+    }
+  }
+}
+
+mutation AddReservation(
+  $userEmail: String!
+  $tableId: String!
+  $numOfDiners: Int!
+  $reservationTime: DateTime!
+  $createdBy: Role!
+  $createdByUserEmail: String
+) {
+  addReservation(
+    userEmail: $userEmail
+    tableId: $tableId
+    numOfDiners: $numOfDiners
+    reservationTime: $reservationTime
+    createdBy: $createdBy
+    createdByUserEmail: $createdByUserEmail
+  ) {
+    id
+  }
+}
+
+mutation EditReservation(
+  $editReservationId: String!
+  $status: ReservationStatus
+  $reservationTime: DateTime
+  $numOfDiners: Int
+) {
+  editReservation(
+    id: $editReservationId
+    status: $status
+    reservationTime: $reservationTime
+    numOfDiners: $numOfDiners
+  ) {
+    id
+    status
+    updatedAt
+  }
+}
+
+mutation CancelReservation($cancelReservationId: String!) {
+  cancelReservation(id: $cancelReservationId) {
+    id
+    status
+    updatedAt
+  }
+}
+
+mutation CompleteReservation($completeReservationId: String!) {
+  completeReservation(id: $completeReservationId) {
+    id
+    status
+    updatedAt
+  }
+}

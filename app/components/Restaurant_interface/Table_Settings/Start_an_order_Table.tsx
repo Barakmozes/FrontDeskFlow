@@ -1,48 +1,41 @@
-// app\components\Restaurant_interface\Table_Settings\Start_an_order_Table.tsx
-
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation"; // Next.js14 App Router
-import { useCartStore } from "@/lib/store";  // Adjust the import path as needed
-import { Table } from "@prisma/client";      // Adjust if you have a local Table type
+import { useRouter } from "next/navigation";
 
+import type { RoomInStore } from "@/lib/AreaStore";
 
-interface StartAnOrderProps {
-  table: Table;
+interface OpenRoomProps {
+  room: RoomInStore;
+  /**
+   * Optional route template.
+   * Example: "/dashboard/rooms/:id" will become "/dashboard/rooms/<roomId>".
+   */
+  routeTemplate?: string;
 }
 
-const StartAnOrder = ({ table }: StartAnOrderProps) => {
+/**
+ * OpenRoom
+ * Replaces the old "Start order" action from the restaurant UI.
+ *
+ * NOTE: This is purely client-side. You can point it to any future
+ * room/booking/guest page you implement.
+ */
+const OpenRoom: React.FC<OpenRoomProps> = ({ room, routeTemplate }) => {
   const router = useRouter();
 
-  // Using selector functions to subscribe only to the actions we need
-  const setTableId = useCartStore((state) => state.setTableId);
-  const resetCart = useCartStore((state) => state.resetCart);
-  const setTableNumber = useCartStore((state) => state.setTableNumber);
-  const handleStartOrder = () => {
-    // 1) Clear or reset cart if you do NOT want leftover items
-    resetCart();
-
-    // 2) Set the new table ID in our cart store (for table-based ordering)
-    setTableId(table.id);
-    setTableNumber(table.tableNumber);
-    // 3) Navigate (or “scroll”) to #menuSection on the same page,
-    //    so the waiter/manager sees the existing Menu and can add items.
-    router.replace("/#menuSection");
-  };
+  const href = (routeTemplate ?? "/dashboard/rooms/:id").replace(":id", room.id);
 
   return (
-   
     <button
-       onClick={handleStartOrder}
       type="button"
-      className="w-full py-3 px-4 mt-2 text-base font-medium text-black bg-orange-400
-                 rounded hover:bg-orange-500 transition disabled:bg-gray-400"
+      onClick={() => router.push(href)}
+      className="text-sm bg-gray-200 text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-300 transition"
+      aria-label="Open room profile"
     >
-      Start an order
+      Open Room Profile
     </button>
-    
   );
 };
 
-export default StartAnOrder;
+export default OpenRoom;

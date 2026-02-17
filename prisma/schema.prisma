@@ -1,7 +1,7 @@
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  // directUrl = env("DIRECT_URL")
 }
 generator client {
   provider = "prisma-client-js"
@@ -16,13 +16,22 @@ generator pothos {
 // -----------------------------------------------------------------------------
 
 enum Role {
+  // Guest / customer
   USER
+
+  // Hotel roles
+  RECEPTION
+  HOUSEKEEPING
+  ACCOUNTING
+  MANAGER
   ADMIN
+
+  // Legacy (restaurant) roles - keep temporarily until DB rows are migrated
   DELIVERY
   WAITER
   CHEF
-  MANAGER
 }
+
 
 enum OrderStatus {
   PREPARING
@@ -353,7 +362,7 @@ model GridConfig {
 
 model Table {
   id              String   @id @default(cuid())
-  tableNumber     Int      @unique
+  tableNumber     Int     
   diners          Int
   reserved        Boolean  @default(false)
   specialRequests String[] @default([])
@@ -375,6 +384,7 @@ model Table {
 
   // Indexes
   @@index([areaId])
+  @@unique([areaId, tableNumber])
 }
 
 model TableUsage {

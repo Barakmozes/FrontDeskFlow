@@ -48,13 +48,13 @@ builder.mutationFields((t) => ({
         throw new GraphQLError("You are not authorized to add tables");
       }
 
-      // Check if the tableNumber is already taken
-      const existing = await prisma.table.findFirst({
-        where: { tableNumber: args.tableNumber },
-      });
-      if (existing) {
-        throw new GraphQLError("A table with this tableNumber already exists");
-      }
+      // // Check if the tableNumber is already taken
+      // const existing = await prisma.table.findFirst({
+      //   where: { tableNumber: args.tableNumber },
+      // });
+      // if (existing) {
+      //   throw new GraphQLError("A table with this tableNumber already exists");
+      // }
 
       // Create a new table
       const newTable = await prisma.table.create({

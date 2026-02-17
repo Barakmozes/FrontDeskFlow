@@ -1,48 +1,65 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from "react";
-import { ClientSafeProvider, getProviders, signIn } from "next-auth/react";
-import { FcGoogle } from "react-icons/fc";
-import { BsFacebook } from "react-icons/bs";
+import { useState } from "react";
+import { signIn } from "next-auth/react";
 
 const LoginComponent = () => {
-  const [providers, setProviders] = useState<
-    Record<string, ClientSafeProvider>
-  >({});
+  const [username, setUsername] = useState(""); // maps to User.email
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    async function getProvidersValue() {
-      const p = await getProviders();
-      setProviders(p as Record<string, ClientSafeProvider>);
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    const res = await signIn("credentials", {
+      username,
+      password,
+      redirect: false,
+      callbackUrl: "/",
+    });
+
+    setLoading(false);
+
+    if (!res || res.error) {
+      setError("Invalid username or password");
+      return;
     }
-    getProvidersValue();
-  }, []);
+
+    window.location.href = res.url ?? "/";
+  }
 
   return (
-    <div className="flex flex-col space-y-4">
-      {providers &&
-        !!Object.keys(providers).length &&
-        Object.values(providers!).map((provider) => (
-          <div key={provider.name}>
-            <button
-              className="flex items-center justify-center w-full border 
-                    font-medium rounded-lg text-xs px-2 md:px-5 py-2 5"
-              onClick={(e) => {
-                e.preventDefault();
-                signIn(provider.id, {callbackUrl: '/'} );
-              }}
-            >
-              {provider.name === "Google" && (
-                <FcGoogle className="h-6 w-6 mr-3 " />
-              )}
-              {provider.name === "Facebook" && (
-                <BsFacebook className="h-6 w-6 mr-3 text-blue-600" />
-              )}
-              Continue with {provider.name}
-            </button>
-          </div>
-        ))}
-    </div>
+    <form onSubmit={onSubmit} className="flex flex-col space-y-4">
+      <div>
+        <label className="form-label">Username or email</label>
+        <input
+          className="formInput"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+        />
+      </div>
+
+      <div>
+        <label className="form-label">Password</label>
+        <input
+          className="formInput"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+      </div>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <button disabled={loading} className="form-button" type="submit">
+        {loading ? "Signing in..." : "Sign in"}
+      </button>
+    </form>
   );
 };
 

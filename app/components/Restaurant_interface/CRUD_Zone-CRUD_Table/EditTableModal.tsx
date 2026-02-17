@@ -1,231 +1,224 @@
 "use client";
 
-import React, { useState } from "react";
-import { FaEdit } from "react-icons/fa";
-import Modal from "../../Common/Modal";
+import React, { useEffect, useState } from "react";
+import { useMutation } from "@urql/next";
 import toast from "react-hot-toast";
-import { useMutation, useQuery } from "@urql/next";
+import { HiPencilSquare } from "react-icons/hi2";
+
+import Modal from "../../Common/Modal";
+
 import {
   EditTableDocument,
   EditTableMutation,
   EditTableMutationVariables,
-  GetTablesDocument,
 } from "@/graphql/generated";
-import { Table } from "@prisma/client";
-import { useRestaurantStore } from "@/lib/AreaStore";
-/**
- * Props:
- * - table: the table to edit
- * - allAreas: array of areas so the user can choose a different one (move the table)
- */
-interface EditTableModalProps {
-  table: Table;
+
+import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
+
+interface EditRoomModalProps {
+  room: RoomInStore;
 }
 
-const EditTableModal: React.FC<EditTableModalProps> = ({ table }) => {
+/**
+ * EditRoomModal
+ * Backend mapping: Table -> Room
+ */
+const EditRoomModal: React.FC<EditRoomModalProps> = ({ room }) => {
+  const hotels = useHotelStore((s) => s.hotels);
+  const updateRoom = useHotelStore((s) => s.updateRoom);
+
   const [isOpen, setIsOpen] = useState(false);
 
-  // 1) Local state: we store the table’s areaId, tableNumber, etc.
-  const [areaId, setAreaId] = useState(table.areaId);
-  const [tableNumber, setTableNumber] = useState<number>(table.tableNumber);
-  const [diners, setDiners] = useState<number>(table.diners);
-  const [reserved, setReserved] = useState<boolean>(table.reserved);
-  const [position, setPosition] = useState<{ x: number; y: number }>(
-    (table.position as any) || { x: 0, y: 0 }
-  );
-  // 2) Zustand store references
-  const {
-    areas,
-  } = useRestaurantStore();
-  // GraphQL for editing a table
-  const [{ fetching: updating }, editTable] = useMutation<
+  const [hotelId, setHotelId] = useState(room.hotelId);
+  const [roomNumber, setRoomNumber] = useState(room.roomNumber);
+  const [capacity, setCapacity] = useState(room.capacity);
+  const [isOccupied, setIsOccupied] = useState(room.isOccupied);
+  const [posX, setPosX] = useState(room.position?.x ?? 0);
+  const [posY, setPosY] = useState(room.position?.y ?? 0);
+
+  useEffect(() => {
+    // Keep form in sync if the room changes in the store
+    if (!isOpen) return;
+    setHotelId(room.hotelId);
+    setRoomNumber(room.roomNumber);
+    setCapacity(room.capacity);
+    setIsOccupied(room.isOccupied);
+    setPosX(room.position?.x ?? 0);
+    setPosY(room.position?.y ?? 0);
+  }, [isOpen, room]);
+
+  const closeModal = () => setIsOpen(false);
+  const openModal = () => setIsOpen(true);
+
+  const [{ fetching, error }, editTable] = useMutation<
     EditTableMutation,
     EditTableMutationVariables
   >(EditTableDocument);
 
-  // So we can refetch
-  const [{}, reexecuteTables] = useQuery({
-    query: GetTablesDocument,
-    pause: true,
-  });
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+const result = await editTable({
+  editTableId: room.id,
+  areaId: hotelId,
+  tableNumber: roomNumber,
+  diners: capacity,
+  reserved: isOccupied,
+  position: { x: posX, y: posY },
+});
 
-  // 2) Modal open/close
-  const openModal = () => setIsOpen(true);
-  const closeModal = () => setIsOpen(false);
 
-  // 3) Submit changes (including new areaId)
-  const handleEditTable = async () => {
-    try {
-      const result = await editTable({
-        editTableId: table.id,
-        areaId,  // crucial: pass the new area
-        tableNumber,
-        diners,
-        reserved,
-        position,
-      });
-
-      if (result.data?.editTable?.id) {
-        toast.success("Table updated successfully!");
-        reexecuteTables({ requestPolicy: "network-only" });
-        closeModal();
-      }
-    } catch (error) {
-      toast.error("Failed to update table.");
-      console.error(error);
+    if (result.error) {
+      console.error("editTable error:", result.error);
+      toast.error("Failed to update room.");
+      return;
     }
+
+    updateRoom(room.id, {
+      hotelId,
+      roomNumber,
+      capacity,
+      isOccupied,
+      position: { x: posX, y: posY },
+      dirty: false,
+    });
+
+    toast.success("Room updated.", { duration: 900 });
+    closeModal();
   };
 
   return (
     <>
-      {/* Trigger to open modal */}
       <button
+        type="button"
         onClick={openModal}
-        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 transition"
-        aria-label="Edit Table"
+        className="p-2 rounded hover:bg-gray-100 transition"
+        aria-label="Edit room"
+        title="Edit room"
       >
-        <FaEdit className="h-3 w-3" />
-        <span className="text-xs font-medium">Edit</span>
+        <HiPencilSquare className="w-5 h-5 text-gray-700" />
       </button>
 
-      <Modal isOpen={isOpen} closeModal={closeModal}>
-        <div className="p-4 bg-white rounded-lg shadow max-w-md mx-auto">
-          <div className="text-center">
-            <FaEdit className="text-gray-500 w-10 h-10 mb-2 mx-auto" />
-            <h2 className="text-lg font-semibold text-gray-700 mb-4">
-              Edit Table
-            </h2>
+      <Modal isOpen={isOpen} closeModal={closeModal} title={`Edit Room ${room.roomNumber}`}>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label htmlFor="editRoomHotel" className="block text-sm font-medium mb-1">
+              Hotel
+            </label>
+            <select
+              id="editRoomHotel"
+              value={hotelId}
+              onChange={(e) => setHotelId(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2"
+              required
+            >
+              {hotels.length === 0 ? (
+                <option value={hotelId}>{hotelId}</option>
+              ) : (
+                hotels.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))
+              )}
+            </select>
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleEditTable();
-            }}
-            className="flex flex-col gap-4"
-          >
-            {/* (A) Select which area the table belongs to */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label
-                htmlFor="areaDropdown"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Area
-              </label>
-              <select
-                id="areaDropdown"
-                value={areaId}
-                onChange={(e) => setAreaId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
-              >
-                {areas.map((area) => (
-                  <option key={area.id} value={area.id}>
-                    {area.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* (B) Table Number */}
-            <div>
-              <label
-                htmlFor="tableNumber"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Table Number
+              <label htmlFor="editRoomNumber" className="block text-sm font-medium mb-1">
+                Room Number
               </label>
               <input
-                id="tableNumber"
+                id="editRoomNumber"
                 type="number"
+                value={roomNumber}
+                onChange={(e) => setRoomNumber(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-2"
                 min={1}
-                value={tableNumber}
-                onChange={(e) => setTableNumber(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
+                required
               />
             </div>
 
-            {/* (C) Diners */}
             <div>
-              <label
-                htmlFor="diners"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Diners
+              <label htmlFor="editCapacity" className="block text-sm font-medium mb-1">
+                Max Guests
               </label>
               <input
-                id="diners"
+                id="editCapacity"
                 type="number"
+                value={capacity}
+                onChange={(e) => setCapacity(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-2"
                 min={1}
-                value={diners}
-                onChange={(e) => setDiners(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
               />
             </div>
+          </div>
 
-            {/* (D) Reserved checkbox */}
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="reserved"
-                checked={reserved}
-                onChange={(e) => setReserved(e.target.checked)}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-200"
-              />
-              <label htmlFor="reserved" className="text-sm font-medium text-gray-700">
-                Reserved
-              </label>
-            </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="editOccupied"
+              type="checkbox"
+              checked={isOccupied}
+              onChange={(e) => setIsOccupied(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="editOccupied" className="text-sm text-gray-700">
+              Occupied
+            </label>
+          </div>
 
-            {/* (E) Position if needed */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Position (X, Y)
+              <label htmlFor="editPosX" className="block text-sm font-medium mb-1">
+                Position X
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="X"
-                  value={position.x}
-                  onChange={(e) =>
-                    setPosition({ ...position, x: Number(e.target.value) })
-                  }
-                  className="w-1/2 px-2 py-1 border border-gray-300 rounded"
-                />
-                <input
-                  type="number"
-                  placeholder="Y"
-                  value={position.y}
-                  onChange={(e) =>
-                    setPosition({ ...position, y: Number(e.target.value) })
-                  }
-                  className="w-1/2 px-2 py-1 border border-gray-300 rounded"
-                />
-              </div>
+              <input
+                id="editPosX"
+                type="number"
+                value={posX}
+                onChange={(e) => setPosX(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-2"
+              />
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeModal}
-                className="py-2 px-4 text-sm font-medium text-gray-500 bg-gray-200 
-                  rounded hover:bg-gray-300 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={updating}
-                className="py-2 px-4 text-sm font-medium text-white bg-blue-600 
-                  rounded hover:bg-blue-700 transition disabled:bg-gray-400"
-              >
-                {updating ? "Updating..." : "Save Changes"}
-              </button>
+            <div>
+              <label htmlFor="editPosY" className="block text-sm font-medium mb-1">
+                Position Y
+              </label>
+              <input
+                id="editPosY"
+                type="number"
+                value={posY}
+                onChange={(e) => setPosY(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-2"
+              />
             </div>
-          </form>
-        </div>
+          </div>
+
+          {error ? (
+            <p className="text-sm text-red-600">{error.message}</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded hover:bg-gray-300 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={fetching}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {fetching ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
       </Modal>
     </>
   );
 };
 
-export default EditTableModal;
+export default EditRoomModal;

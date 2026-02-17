@@ -1,191 +1,158 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useQuery, useMutation } from "@urql/next";
+import { useMutation, useQuery } from "@urql/next";
 import toast from "react-hot-toast";
 
 import Modal from "../../Common/Modal";
+
 import {
   AddTableDocument,
   AddTableMutation,
   AddTableMutationVariables,
-  GetTablesDocument,
-  GetTablesQuery,
   BasicArea,
+  GetTablesDocument,
 } from "@/graphql/generated";
 
-/**
- * Props:
- * - allAreas: an array of all available BasicArea objects 
- *             so the user can choose from them.
- * - areaSelectID (optional): if there's already a connected area,
- *             we want to display it first as the default selection
- */
-export interface AddTableModalProps {
-  allAreas: BasicArea[];
-  areaSelectID?: BasicArea | null;
+interface AddRoomModalProps {
+  hotels: BasicArea[];
+  selectedHotel?: BasicArea | null;
 }
 
-const AddTableModal: React.FC<AddTableModalProps> = ({ allAreas, areaSelectID }) => {
-  // 1) Modal open/close
+/**
+ * AddRoomModal
+ * Backend mapping: Table -> Room
+ */
+const AddRoomModal: React.FC<AddRoomModalProps> = ({ hotels, selectedHotel }) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  // 2) Form fields
-  const [selectedAreaId, setSelectedAreaId] = useState<string>("");
-  const [tableNumber, setTableNumber] = useState<number>(1);
-  const [diners, setDiners] = useState<number>(2);
+  const [hotelId, setHotelId] = useState<string>(selectedHotel?.id ?? "");
+  const [roomNumber, setRoomNumber] = useState<number>(0);
+  const [capacity, setCapacity] = useState<number>(2);
   const [posX, setPosX] = useState<number>(0);
   const [posY, setPosY] = useState<number>(0);
 
-  // 3) If `areaSelectID` changes, update our local `selectedAreaId`
-  //    so that area is pre-selected when the modal opens.
   useEffect(() => {
-    if (areaSelectID?.id) {
-      setSelectedAreaId(areaSelectID.id);
-    }
-  }, [areaSelectID]);
+    setHotelId(selectedHotel?.id ?? "");
+  }, [selectedHotel?.id]);
 
-  // 4) GraphQL: addTable mutation
+  const openModal = () => {
+    setHotelId(selectedHotel?.id ?? hotelId);
+    setIsOpen(true);
+  };
+
+  const closeModal = () => setIsOpen(false);
+
+  // Re-fetch rooms after adding
+  const [, reexecuteRoomsQuery] = useQuery({
+    query: GetTablesDocument,
+    pause: true,
+  });
+
   const [{ fetching, error }, addTable] = useMutation<
     AddTableMutation,
     AddTableMutationVariables
   >(AddTableDocument);
 
-  // 5) Re-fetch tables after adding a new table
-  const [{}, reexecuteTablesQuery] = useQuery<GetTablesQuery>({
-    query: GetTablesDocument,
-    pause: true,
-  });
-
-  // Modal controls
-  const openModal = () => {
-    // Optionally pre-fill the first area if none is selected
-    if (!selectedAreaId && allAreas.length > 0) {
-      setSelectedAreaId(allAreas[0].id);
-    }
-    setIsOpen(true);
-  };
-  const closeModal = () => setIsOpen(false);
-
-  // 6) Submit the form
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedAreaId) {
-      toast.error("Please select an area before adding a table");
+    if (!hotelId) {
+      toast.error("Please select a hotel.");
+      return;
+    }
+    if (!Number.isFinite(roomNumber) || roomNumber <= 0) {
+      toast.error("Room number must be a positive number.");
       return;
     }
 
-    try {
-      const result = await addTable({
-        areaId: selectedAreaId,
-        diners,
-        position: { x: posX, y: posY },
-        tableNumber,
-      });
-
-      if (result.data?.addTable?.id) {
-        toast.success(`Table #${result.data.addTable.tableNumber} created!`);
-
-        // Reset fields
-        setSelectedAreaId(areaSelectID?.id ?? "");
-        setTableNumber(1);
-        setDiners(2);
-        setPosX(0);
-        setPosY(0);
-
-        closeModal();
-        // Re-fetch to see newly created table
-        reexecuteTablesQuery({ requestPolicy: "network-only" });
-      } else if (result.error) {
-        toast.error("Failed to create table: " + result.error.message);
-      }
-    } catch (err) {
-      console.error("Failed to create table:", err);
-      toast.error("Failed to create table. See console for details.");
+const result = await addTable({
+  areaId: hotelId,
+  tableNumber: roomNumber,
+  diners: capacity,
+  position: { x: posX, y: posY },
+});
+    if (result.error) {
+      console.error("addTable error:", result.error);
+      toast.error("Failed to add room.");
+      return;
     }
+
+    toast.success("Room added.", { duration: 900 });
+    await reexecuteRoomsQuery({ requestPolicy: "network-only" });
+    closeModal();
+
+    // Reset form but keep selected hotel
+    setRoomNumber(0);
+    setCapacity(2);
+    setPosX(0);
+    setPosY(0);
   };
 
   return (
     <>
-      {/* The button that triggers the modal */}
       <button
+        type="button"
         onClick={openModal}
-        className="flex items-center gap-1 text-sm px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+        className="text-sm bg-blue-600 text-white px-3 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+        aria-label="Add room"
       >
-        Add Table
+        Add Room
       </button>
 
-      {/* Modal content */}
-      <Modal isOpen={isOpen} closeModal={closeModal}>
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-4 max-w-md mx-auto p-4 bg-white rounded-lg shadow-md"
-        >
-          <h2 className="text-xl font-bold text-gray-800">Add a New Table</h2>
-
-          {/* 
-            7) A dropdown with all area names. 
-            Preselect the areaSelectID's id if present 
-          */}
+      <Modal isOpen={isOpen} closeModal={closeModal} title="Add Room">
+        <form onSubmit={handleAdd} className="space-y-4">
           <div>
-            <label htmlFor="areaDropdown" className="block text-sm font-medium mb-1">
-              Select an Area <span className="text-red-500">*</span>
+            <label htmlFor="hotelSelect" className="block text-sm font-medium mb-1">
+              Hotel
             </label>
             <select
-              id="areaDropdown"
-              value={selectedAreaId}
-              onChange={(e) => setSelectedAreaId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
+              id="hotelSelect"
+              value={hotelId}
+              onChange={(e) => setHotelId(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2"
               required
             >
-              <option value="">-- Choose an area --</option>
-              {allAreas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {area.name}
+              <option value="">-- Select a hotel --</option>
+              {hotels.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Table Number */}
-          <div>
-            <label
-              htmlFor="tableNumber"
-              className="block text-sm font-medium mb-1"
-            >
-              Table Number <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="tableNumber"
-              type="number"
-              min={1}
-              value={tableNumber}
-              onChange={(e) => setTableNumber(Number(e.target.value))}
-              placeholder="e.g. 1"
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
-              required
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="roomNumber" className="block text-sm font-medium mb-1">
+                Room Number
+              </label>
+              <input
+                id="roomNumber"
+                type="number"
+                value={roomNumber}
+                onChange={(e) => setRoomNumber(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-2"
+                min={1}
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="capacity" className="block text-sm font-medium mb-1">
+                Max Guests
+              </label>
+              <input
+                id="capacity"
+                type="number"
+                value={capacity}
+                onChange={(e) => setCapacity(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-3 py-2"
+                min={1}
+              />
+            </div>
           </div>
 
-          {/* Diners */}
-          <div>
-            <label htmlFor="diners" className="block text-sm font-medium mb-1">
-              Diners <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="diners"
-              type="number"
-              min={1}
-              value={diners}
-              onChange={(e) => setDiners(Number(e.target.value))}
-              placeholder="e.g. 4"
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
-              required
-            />
-          </div>
-
-          {/* Position (X, Y) optional */}
-          <div className="flex gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="posX" className="block text-sm font-medium mb-1">
                 Position X
@@ -195,9 +162,10 @@ const AddTableModal: React.FC<AddTableModalProps> = ({ allAreas, areaSelectID })
                 type="number"
                 value={posX}
                 onChange={(e) => setPosX(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
+                className="w-full border border-gray-300 rounded px-3 py-2"
               />
             </div>
+
             <div>
               <label htmlFor="posY" className="block text-sm font-medium mb-1">
                 Position Y
@@ -207,20 +175,16 @@ const AddTableModal: React.FC<AddTableModalProps> = ({ allAreas, areaSelectID })
                 type="number"
                 value={posY}
                 onChange={(e) => setPosY(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring focus:ring-blue-200"
+                className="w-full border border-gray-300 rounded px-3 py-2"
               />
             </div>
           </div>
 
-          {/* Error Display */}
-          {error && (
-            <p className="text-red-600 text-sm">
-              Something went wrong: {error.message}
-            </p>
-          )}
+          {error ? (
+            <p className="text-sm text-red-600">{error.message}</p>
+          ) : null}
 
-          {/* Buttons */}
-          <div className="flex justify-end gap-2 mt-4">
+          <div className="flex justify-end gap-2">
             <button
               type="button"
               onClick={closeModal}
@@ -233,7 +197,7 @@ const AddTableModal: React.FC<AddTableModalProps> = ({ allAreas, areaSelectID })
               disabled={fetching}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition disabled:opacity-50"
             >
-              {fetching ? "Adding..." : "Add Table"}
+              {fetching ? "Adding…" : "Add Room"}
             </button>
           </div>
         </form>
@@ -242,4 +206,4 @@ const AddTableModal: React.FC<AddTableModalProps> = ({ allAreas, areaSelectID })
   );
 };
 
-export default AddTableModal;
+export default AddRoomModal;
