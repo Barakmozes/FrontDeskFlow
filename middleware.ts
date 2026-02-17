@@ -1,13 +1,20 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
-const ROLES_ALLOWED_TO_AUTH = ["USER", "ADMIN", "DELIVERY","WAITER","MANAGER"];
+const ROLES_ALLOWED_TO_AUTH = [  "USER",          // guest / customer
+  "RECEPTION",     // front desk
+  "HOUSEKEEPING",  // housekeeping staff
+  "ACCOUNTING",    // finance
+  "MANAGER",       // management
+  "ADMIN",         // system admin
+
+  "DELIVERY",
+  "WAITER",
+  "CHEF",];
 
 export default withAuth(
   function middleware(req) {
     if (
-      (req.nextUrl.pathname.startsWith("/dashboard") &&
-        req.nextauth.token?.role !== "ADMIN") ||
       (req.nextUrl.pathname.startsWith("/api/graphql") &&
         req.nextauth.token?.role !== "ADMIN")
     ) {

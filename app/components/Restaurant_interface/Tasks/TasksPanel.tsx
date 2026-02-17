@@ -349,7 +349,7 @@ export default function TasksPanel({
             <input
               value={assigneeEmail}
               onChange={(e) => setAssigneeEmail(e.target.value)}
-              placeholder="Assign to email (optional, defaults to me)"
+              placeholder="Assign to email or Name!"
               className="w-full border rounded-md px-3 py-2 text-xs"
             />
           ) : (

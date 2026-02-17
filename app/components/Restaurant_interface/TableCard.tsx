@@ -53,8 +53,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ room }) => {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <ToggleOccupancy room={room} />
-        <RoomBookings room={room} />
-    <RoomServiceQuickBtn roomId={room.id} roomNumber={room.roomNumber} />
+
       </div>
 
       {room.notes?.length ? (

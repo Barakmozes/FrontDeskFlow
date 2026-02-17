@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@urql/next";
@@ -25,77 +25,32 @@ import {
   ReservationStatus,
 } from "@/graphql/generated";
 
+// ✅ Use the shared grouping logic (already used in your Orders/Reception side)
+import {
+  groupReservationsIntoStays,
+  todayLocalDateKey,
+  toLocalDateKey,
+  type StayBlock,
+} from "@/lib/stayGrouping";
+
 type Res = GetReservationsQuery["getReservations"][number];
 
-type Tab = "EXISTING" | "FUTURE" | "PAST" | "ALL";
+type Tab = "OPEN" | "IN_HOUSE" | "HISTORY" | "ALL";
 
-type StayBlock = {
-  stayId: string;
-
-  hotelId: string;
+type StayVM = StayBlock & {
   hotelName: string;
-
-  roomId: string;
-  roomNumber: number;
-
-  userEmail: string;
-  guestName: string;
-  guestPhone: string | null;
-
-  // Derived from grouped nights:
-  startDateKey: string; // check-in date (first night key)
-  lastNightKey: string; // last night in the sequence (inclusive)
-  endDateKey: string; // checkout date (day after lastNightKey)
-  nights: number;
-
-  status: ReservationStatus; // aggregated status
-  isOccupiedToday: boolean; // derived by date-range (not just room.reserved)
+  coversToday: boolean;
+  isInHouseToday: boolean;
   isArrivalTodayNotCheckedIn: boolean;
-
-  // Under the hood:
-  reservations: Res[]; // sorted by date
-  reservationIds: string[];
 };
 
 const isStaffRole = (role?: string | null) =>
   role === "ADMIN" || role === "MANAGER" || role === "WAITER"; // until hotel roles migrate
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
+const isClosedStatus = (s: ReservationStatus) =>
+  s === ReservationStatus.Completed || s === ReservationStatus.Cancelled;
 
-function localTodayKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-/**
- * We compare YYYY-MM-DD strings lexicographically (works correctly).
- */
-function toLocalDateKey(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function parseDateKeyToLocalMidday(dateKey: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  // Use midday local to avoid DST boundary issues.
-  return new Date(y, mo - 1, d, 12, 0, 0, 0);
-}
-
-function addDaysToDateKey(dateKey: string, days: number): string {
-  const dt = parseDateKeyToLocalMidday(dateKey);
-  if (!dt) return dateKey;
-  dt.setDate(dt.getDate() + days);
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
-}
-
-function isDateKey(v: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(v);
-}
+const isOpenStatus = (s: ReservationStatus) => !isClosedStatus(s);
 
 function formatLocalDateTime(iso: string): string {
   const d = new Date(iso);
@@ -126,182 +81,17 @@ function statusPill(s: ReservationStatus) {
   );
 }
 
-/**
- * Aggregate status for a stay.
- * We keep it simple and hotel-friendly:
- * - If ALL cancelled => Cancelled
- * - Else if ANY confirmed => Confirmed
- * - Else if ANY pending => Pending
- * - Else if ANY completed => Completed
- */
-function aggregateStayStatus(nights: Res[]): ReservationStatus {
-  if (nights.length === 0) return ReservationStatus.Pending;
-
-  const allCancelled = nights.every((r) => r.status === ReservationStatus.Cancelled);
-  if (allCancelled) return ReservationStatus.Cancelled;
-
-  if (nights.some((r) => r.status === ReservationStatus.Confirmed)) return ReservationStatus.Confirmed;
-  if (nights.some((r) => r.status === ReservationStatus.Pending)) return ReservationStatus.Pending;
-  if (nights.some((r) => r.status === ReservationStatus.Completed)) return ReservationStatus.Completed;
-
-  return nights[0].status;
+function isDateKey(v: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
-/**
- * Split a sorted list of dateKeys into contiguous sequences.
- * Example: 20,21,22 => one block. 20,22 => two blocks.
- */
-function splitContiguousDateKeys(sorted: string[]): string[][] {
-  const blocks: string[][] = [];
-  let current: string[] = [];
-
-  for (const dk of sorted) {
-    if (current.length === 0) {
-      current = [dk];
-      continue;
-    }
-
-    const prev = current[current.length - 1];
-    const prevPlus1 = addDaysToDateKey(prev, 1);
-
-    if (dk === prevPlus1) {
-      current.push(dk);
-    } else {
-      blocks.push(current);
-      current = [dk];
-    }
-  }
-
-  if (current.length) blocks.push(current);
-  return blocks;
-}
-
-/**
- * Build multi-night stays from the "one reservation per night" bridge model.
- *
- * Grouping rules:
- * - Same roomId + same userEmail
- * - Nights are stitched into contiguous sequences by dateKey
- */
-function groupReservationsIntoStays(args: {
-  reservations: Res[];
-  todayKey: string;
-  hotelNameById: Map<string, string>;
-}): StayBlock[] {
-  const { reservations, todayKey, hotelNameById } = args;
-
-  // 1) Group by (roomId + userEmail)
-  const byRoomUser = new Map<string, Res[]>();
-
-  for (const r of reservations) {
-    const roomId = r.table.id;
-    const userEmail = r.userEmail ?? "";
-    const k = `${roomId}||${userEmail}`;
-    const list = byRoomUser.get(k) ?? [];
-    list.push(r);
-    byRoomUser.set(k, list);
-  }
-
-  const stays: StayBlock[] = [];
-
-  // 2) Within each group: sort by dateKey and split contiguous sequences
-  for (const list of Array.from(byRoomUser.values())) {
-  const withKeys = list
-    .map((r) => ({ r, dk: toLocalDateKey(r.reservationTime) }))
-    .filter((x) => !!x.dk);
-
-  withKeys.sort((a, b) => a.dk.localeCompare(b.dk));
-
-  const byDate = new Map<string, Res>();
-  for (const x of withKeys) {
-    if (!byDate.has(x.dk)) byDate.set(x.dk, x.r);
-  }
-
-    const dateKeys = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
-    const blocks = splitContiguousDateKeys(dateKeys);
-
-    for (const blockKeys of blocks) {
-      const nights = blockKeys.map((dk) => byDate.get(dk)!).filter(Boolean);
-
-      // Defensive: nights might be empty
-      if (nights.length === 0) continue;
-
-      const first = nights[0];
-      const last = nights[nights.length - 1];
-
-      const hotelId = first.table.areaId;
-      const hotelName = hotelNameById.get(hotelId) ?? "—";
-      const roomId = first.table.id;
-      const roomNumber = first.table.tableNumber;
-
-      const userEmail = first.userEmail ?? "";
-      const guestName = first.user?.profile?.name || userEmail || "—";
-      const guestPhone = first.user?.profile?.phone ?? null;
-
-      const startDateKey = blockKeys[0];
-      const lastNightKey = blockKeys[blockKeys.length - 1];
-      const endDateKey = addDaysToDateKey(lastNightKey, 1);
-
-      // Determine current occupancy for THIS stay:
-      // - coversToday: start <= today <= lastNight
-      const coversToday = startDateKey <= todayKey && lastNightKey >= todayKey;
-
-      // table.reserved represents current room occupancy. But it is not per-reservation,
-      // so we only interpret it within the stay that covers today.
-      const tableReservedNow = !!first.table.reserved;
-
-      const isOccupiedToday = coversToday && tableReservedNow;
-      const isArrivalTodayNotCheckedIn = coversToday && !tableReservedNow && startDateKey === todayKey;
-
-      const stay: StayBlock = {
-        stayId: `${roomId}::${userEmail}::${startDateKey}`,
-
-        hotelId,
-        hotelName,
-
-        roomId,
-        roomNumber,
-
-        userEmail,
-        guestName,
-        guestPhone,
-
-        startDateKey,
-        lastNightKey,
-        endDateKey,
-        nights: nights.length,
-
-        status: aggregateStayStatus(nights),
-        isOccupiedToday,
-        isArrivalTodayNotCheckedIn,
-
-        reservations: nights,
-        reservationIds: nights.map((r) => r.id),
-      };
-
-      stays.push(stay);
-    }
-  }
-
-  // Sort stays: hotel, room, date
-  stays.sort((a, b) => {
-    const ha = a.hotelName.localeCompare(b.hotelName);
-    if (ha !== 0) return ha;
-    if (a.roomNumber !== b.roomNumber) return a.roomNumber - b.roomNumber;
-    return a.startDateKey.localeCompare(b.startDateKey);
-  });
-
-  return stays;
-}
-
-function stayMatchesSearch(stay: StayBlock, q: string): boolean {
+function stayMatchesSearch(stay: StayVM, q: string): boolean {
   if (!q) return true;
+  const query = q.toLowerCase();
 
-  const qLower = q.toLowerCase();
-
-  // If query is a dateKey, allow "date inside stay range"
-  if (isDateKey(qLower)) {
-    return stay.startDateKey <= qLower && stay.lastNightKey >= qLower;
+  // dateKey search: match if the date is inside stay range
+  if (isDateKey(query)) {
+    return stay.startDateKey <= query && stay.lastNightKey >= query;
   }
 
   const hay = [
@@ -319,7 +109,22 @@ function stayMatchesSearch(stay: StayBlock, q: string): boolean {
     .join(" ")
     .toLowerCase();
 
-  return hay.includes(qLower);
+  return hay.includes(query);
+}
+
+function reservationMatchesSearch(r: Res, q: string): boolean {
+  if (!q) return true;
+  const query = q.toLowerCase();
+
+  const roomNo = String(r.table?.tableNumber ?? "");
+  const dateKey = toLocalDateKey(r.reservationTime);
+  const guestName = (r.user?.profile?.name ?? "").toLowerCase();
+  const guestEmail = (r.userEmail ?? "").toLowerCase();
+  const guestPhone = (r.user?.profile?.phone ?? "").toLowerCase();
+  const status = String(r.status ?? "").toLowerCase();
+
+  const hay = `${roomNo} ${dateKey} ${guestName} ${guestEmail} ${guestPhone} ${status}`.toLowerCase();
+  return hay.includes(query);
 }
 
 export default function ReservationsList({
@@ -333,40 +138,39 @@ export default function ReservationsList({
   const q = (params.get("q") ?? "").trim();
 
   // UI state
-  const [tab, setTab] = useState<Tab>("FUTURE");
+  const [tab, setTab] = useState<Tab>("OPEN");
   const [hotelId, setHotelId] = useState<string>("ALL");
   const [roomId, setRoomId] = useState<string>("ALL");
   const [showGuestDetails, setShowGuestDetails] = useState(true);
   const [includeCancelled, setIncludeCancelled] = useState(false);
-
-  // ✅ improvement: group into stays (toggle)
   const [groupByStay, setGroupByStay] = useState(true);
 
   // expand/collapse for stays
   const [expandedStayIds, setExpandedStayIds] = useState<Record<string, boolean>>({});
 
-  const todayKey = useMemo(() => localTodayKey(), []);
+  // ✅ keep “today” fresh (prevents stale view if user leaves page open)
+  const [todayKey, setTodayKey] = useState(() => todayLocalDateKey());
+  useEffect(() => {
+    const t = setInterval(() => setTodayKey(todayLocalDateKey()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Permission gate
   const canView = isStaffRole(staffRole);
 
   useEffect(() => {
-    if (staffEmail && !canView) {
-      toast.error("You do not have permission to view reservations.");
-    }
+    if (staffEmail && !canView) toast.error("You do not have permission to view reservations.");
   }, [staffEmail, canView]);
 
   // Hotels
-  const [
-    { data: hotelsData, fetching: hotelsFetching, error: hotelsError },
-  ] = useQuery<GetAreasNameDescriptionQuery, GetAreasNameDescriptionQueryVariables>({
-    query: GetAreasNameDescriptionDocument,
-    variables: { orderBy: { createdAt: "asc" as any } },
-    requestPolicy: "cache-and-network",
-  });
+  const [{ data: hotelsData, fetching: hotelsFetching, error: hotelsError }] =
+    useQuery<GetAreasNameDescriptionQuery, GetAreasNameDescriptionQueryVariables>({
+      query: GetAreasNameDescriptionDocument,
+      variables: { orderBy: { createdAt: "asc" as any } },
+      requestPolicy: "cache-and-network",
+    });
 
   const hotels = hotelsData?.getAreasNameDescription ?? [];
-
   const hotelNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const h of hotels) m.set(h.id, h.name);
@@ -374,14 +178,12 @@ export default function ReservationsList({
   }, [hotels]);
 
   // Rooms
-  const [
-    { data: roomsData, fetching: roomsFetching, error: roomsError },
-    refetchRooms,
-  ] = useQuery<GetTablesQuery, GetTablesQueryVariables>({
-    query: GetTablesDocument,
-    variables: {},
-    requestPolicy: "cache-and-network",
-  });
+  const [{ data: roomsData, fetching: roomsFetching, error: roomsError }, refetchRooms] =
+    useQuery<GetTablesQuery, GetTablesQueryVariables>({
+      query: GetTablesDocument,
+      variables: {},
+      requestPolicy: "cache-and-network",
+    });
 
   const rooms = roomsData?.getTables ?? [];
 
@@ -398,26 +200,24 @@ export default function ReservationsList({
   }, [roomsForHotel, roomId]);
 
   // Reservations
-  const [
-    { data: resData, fetching: resFetching, error: resError },
-    refetchReservations,
-  ] = useQuery<GetReservationsQuery, GetReservationsQueryVariables>({
-    query: GetReservationsDocument,
-    variables: {},
-    requestPolicy: "cache-and-network",
-  });
+  const [{ data: resData, fetching: resFetching, error: resError }, refetchReservations] =
+    useQuery<GetReservationsQuery, GetReservationsQueryVariables>({
+      query: GetReservationsDocument,
+      variables: {},
+      requestPolicy: "cache-and-network",
+    });
 
   const allReservations = resData?.getReservations ?? [];
-
   const loading = hotelsFetching || roomsFetching || resFetching;
 
-  // Base filtering by hotel/room/cancelled (search is applied later)
-  const base = useMemo(() => {
+  // Base filtering by hotel/room/cancelled
+  const baseReservations = useMemo(() => {
     let list = allReservations;
 
     if (hotelId !== "ALL") list = list.filter((r) => r.table.areaId === hotelId);
     if (roomId !== "ALL") list = list.filter((r) => r.table.id === roomId);
 
+    // ✅ only hide cancelled if toggle off (Completed stays are still kept for history)
     if (!includeCancelled) {
       list = list.filter((r) => r.status !== ReservationStatus.Cancelled);
     }
@@ -425,64 +225,64 @@ export default function ReservationsList({
     return list;
   }, [allReservations, hotelId, roomId, includeCancelled]);
 
-  // --------- STAYS (grouped) ---------
-  const staysAll = useMemo(() => {
-    return groupReservationsIntoStays({
-      reservations: base,
-      todayKey,
-      hotelNameById,
-    });
-  }, [base, todayKey, hotelNameById]);
+  // ---------------- STAYS ----------------
+const staysAll: StayVM[] = useMemo(() => {
+  const stays = groupReservationsIntoStays(baseReservations); // ✅ FIX
 
-  const staysFilteredBySearch = useMemo(() => {
-    const qTrim = q.trim();
-    if (!qTrim) return staysAll;
-    return staysAll.filter((s) => stayMatchesSearch(s, qTrim));
+  return stays.map((s) => {
+    const hotelName = hotelNameById.get(s.hotelId) ?? "—";
+
+    const coversToday = s.startDateKey <= todayKey && s.lastNightKey >= todayKey;
+
+    const isInHouseToday = coversToday && !!s.tableReservedNow;
+
+    const isArrivalTodayNotCheckedIn =
+      coversToday && s.startDateKey === todayKey && !s.tableReservedNow;
+
+    return {
+      ...s,
+      hotelName,
+      coversToday,
+      isInHouseToday,
+      isArrivalTodayNotCheckedIn,
+    };
+  });
+}, [baseReservations, todayKey, hotelNameById]);
+
+  const staysSearch = useMemo(() => {
+    if (!q) return staysAll;
+    return staysAll.filter((s) => stayMatchesSearch(s, q));
   }, [staysAll, q]);
 
-  const staysExisting = useMemo(() => {
-    // in-house = covers today AND reserved=true (derived inside block)
-    return staysFilteredBySearch.filter((s) => s.isOccupiedToday);
-  }, [staysFilteredBySearch]);
+  const staysOpen = useMemo(() => staysSearch.filter((s) => isOpenStatus(s.status)), [staysSearch]);
+  const staysInHouse = useMemo(
+    () => staysOpen.filter((s) => s.isInHouseToday),
+    [staysOpen]
+  );
+  const staysHistory = useMemo(
+    () => staysSearch.filter((s) => isClosedStatus(s.status)),
+    [staysSearch]
+  );
 
-  const staysPast = useMemo(() => {
-    return staysFilteredBySearch.filter((s) => s.lastNightKey < todayKey);
-  }, [staysFilteredBySearch, todayKey]);
+  // ---------------- NIGHTLY RESERVATIONS ----------------
+  const reservationsSearch = useMemo(() => {
+    if (!q) return baseReservations;
+    return baseReservations.filter((r) => reservationMatchesSearch(r, q));
+  }, [baseReservations, q]);
 
-  const staysFuture = useMemo(() => {
-    // Future = NOT past and NOT in-house
-    return staysFilteredBySearch.filter((s) => !s.isOccupiedToday && !(s.lastNightKey < todayKey));
-  }, [staysFilteredBySearch, todayKey]);
+  const reservationsOpen = useMemo(
+    () => reservationsSearch.filter((r) => isOpenStatus(r.status)),
+    [reservationsSearch]
+  );
 
-  // --------- RESERVATIONS (ungrouped) ---------
-  const reservationsFiltered = useMemo(() => {
-    const qLower = q.trim().toLowerCase();
-    if (!qLower) return base;
+  const reservationsHistory = useMemo(
+    () => reservationsSearch.filter((r) => isClosedStatus(r.status)),
+    [reservationsSearch]
+  );
 
-    return base.filter((r) => {
-      const roomNo = String(r.table.tableNumber);
-      const dateKey = toLocalDateKey(r.reservationTime);
-      const guestName = (r.user?.profile?.name ?? "").toLowerCase();
-      const guestEmail = (r.userEmail ?? "").toLowerCase();
-      const guestPhone = (r.user?.profile?.phone ?? "").toLowerCase();
-      const status = String(r.status).toLowerCase();
-
-      const hay = `${roomNo} ${dateKey} ${guestName} ${guestEmail} ${guestPhone} ${status}`.toLowerCase();
-      return hay.includes(qLower);
-    });
-  }, [base, q]);
-
-  const reservationsPast = useMemo(() => {
-    return reservationsFiltered.filter((r) => toLocalDateKey(r.reservationTime) < todayKey);
-  }, [reservationsFiltered, todayKey]);
-
-  const reservationsFuture = useMemo(() => {
-    return reservationsFiltered.filter((r) => toLocalDateKey(r.reservationTime) >= todayKey);
-  }, [reservationsFiltered, todayKey]);
-
-  const reservationsExisting = useMemo(() => {
-    // Keep "in-house" strict: room reserved=true + confirmed + latest <= today per room
-    const candidates = reservationsFiltered.filter((r) => {
+  // “In-house” nightly view: pick latest <= today per room, confirmed & reserved
+  const reservationsInHouse = useMemo(() => {
+    const candidates = reservationsOpen.filter((r) => {
       if (!r.table?.reserved) return false;
       if (r.status !== ReservationStatus.Confirmed) return false;
       const dk = toLocalDateKey(r.reservationTime);
@@ -502,55 +302,55 @@ export default function ReservationsList({
     }
 
     return Array.from(byRoom.values()).sort((a, b) => a.table.tableNumber - b.table.tableNumber);
-  }, [reservationsFiltered, todayKey]);
+  }, [reservationsOpen, todayKey]);
 
-  // --------- Counters & list selection ---------
+  // ---------------- COUNTS + ACTIVE LIST ----------------
   const counts = useMemo(() => {
     if (groupByStay) {
       return {
-        all: staysFilteredBySearch.length,
-        existing: staysExisting.length,
-        future: staysFuture.length,
-        past: staysPast.length,
+        open: staysOpen.length,
+        inHouse: staysInHouse.length,
+        history: staysHistory.length,
+        all: staysSearch.length,
       };
     }
     return {
-      all: reservationsFiltered.length,
-      existing: reservationsExisting.length,
-      future: reservationsFuture.length,
-      past: reservationsPast.length,
+      open: reservationsOpen.length,
+      inHouse: reservationsInHouse.length,
+      history: reservationsHistory.length,
+      all: reservationsSearch.length,
     };
   }, [
     groupByStay,
-    staysFilteredBySearch.length,
-    staysExisting.length,
-    staysFuture.length,
-    staysPast.length,
-    reservationsFiltered.length,
-    reservationsExisting.length,
-    reservationsFuture.length,
-    reservationsPast.length,
+    staysOpen.length,
+    staysInHouse.length,
+    staysHistory.length,
+    staysSearch.length,
+    reservationsOpen.length,
+    reservationsInHouse.length,
+    reservationsHistory.length,
+    reservationsSearch.length,
   ]);
 
   const listModeLabel = groupByStay ? "stays" : "reservations";
 
   const stayListForTab = useMemo(() => {
-    if (tab === "EXISTING") return staysExisting;
-    if (tab === "FUTURE") return staysFuture;
-    if (tab === "PAST") return staysPast;
-    return staysFilteredBySearch;
-  }, [tab, staysExisting, staysFuture, staysPast, staysFilteredBySearch]);
+    if (tab === "IN_HOUSE") return staysInHouse;
+    if (tab === "OPEN") return staysOpen;
+    if (tab === "HISTORY") return staysHistory;
+    return staysSearch;
+  }, [tab, staysInHouse, staysOpen, staysHistory, staysSearch]);
 
   const reservationListForTab = useMemo(() => {
-    if (tab === "EXISTING") return reservationsExisting;
-    if (tab === "FUTURE") return reservationsFuture;
-    if (tab === "PAST") return reservationsPast;
-    return reservationsFiltered;
-  }, [tab, reservationsExisting, reservationsFuture, reservationsPast, reservationsFiltered]);
+    if (tab === "IN_HOUSE") return reservationsInHouse;
+    if (tab === "OPEN") return reservationsOpen;
+    if (tab === "HISTORY") return reservationsHistory;
+    return reservationsSearch;
+  }, [tab, reservationsInHouse, reservationsOpen, reservationsHistory, reservationsSearch]);
 
-  const toggleStayExpand = (stayId: string) => {
+  const toggleStayExpand = useCallback((stayId: string) => {
     setExpandedStayIds((prev) => ({ ...prev, [stayId]: !prev[stayId] }));
-  };
+  }, []);
 
   if (!staffEmail) {
     return (
@@ -580,7 +380,8 @@ export default function ReservationsList({
           <div>
             <h1 className="text-xl font-bold text-gray-900">Reservations</h1>
             <p className="text-xs text-gray-500">
-              View bookings by Hotel (Area) → Room (Table). Toggle “Group by stay” to see multi-night blocks.
+              ✅ Open reservations never disappear on check‑in. They move to History only after
+              Checkout (Completed) or Cancelled.
             </p>
           </div>
 
@@ -685,32 +486,32 @@ export default function ReservationsList({
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setTab("EXISTING")}
+            onClick={() => setTab("IN_HOUSE")}
             className={`text-xs px-3 py-2 rounded-lg border ${
-              tab === "EXISTING" ? "bg-gray-900 text-white" : "bg-white"
+              tab === "IN_HOUSE" ? "bg-gray-900 text-white" : "bg-white"
             }`}
           >
-            Existing (In‑house) ({counts.existing})
+            In‑house ({counts.inHouse})
           </button>
 
           <button
             type="button"
-            onClick={() => setTab("FUTURE")}
+            onClick={() => setTab("OPEN")}
             className={`text-xs px-3 py-2 rounded-lg border ${
-              tab === "FUTURE" ? "bg-gray-900 text-white" : "bg-white"
+              tab === "OPEN" ? "bg-gray-900 text-white" : "bg-white"
             }`}
           >
-            Future ({counts.future})
+            Open ({counts.open})
           </button>
 
           <button
             type="button"
-            onClick={() => setTab("PAST")}
+            onClick={() => setTab("HISTORY")}
             className={`text-xs px-3 py-2 rounded-lg border ${
-              tab === "PAST" ? "bg-gray-900 text-white" : "bg-white"
+              tab === "HISTORY" ? "bg-gray-900 text-white" : "bg-white"
             }`}
           >
-            Past ({counts.past})
+            History ({counts.history})
           </button>
 
           <button
@@ -769,7 +570,7 @@ export default function ReservationsList({
                 <tbody>
                   {stayListForTab.map((s) => {
                     const expanded = !!expandedStayIds[s.stayId];
-                    const folioId = s.reservationIds[0]; // first night folio until a real stay-folio exists
+                    const folioId = s.reservationIds?.[0];
 
                     return (
                       <React.Fragment key={s.stayId}>
@@ -786,14 +587,14 @@ export default function ReservationsList({
                           </td>
 
                           <td className="px-3 py-2">{s.hotelName}</td>
-
                           <td className="px-3 py-2 font-medium">#{s.roomNumber}</td>
 
                           <td className="px-3 py-2">
                             <div className="text-xs text-gray-900">
                               {s.startDateKey} → {s.endDateKey}
                             </div>
-                            {s.isOccupiedToday ? (
+
+                            {s.isInHouseToday ? (
                               <div className="text-[10px] text-emerald-700 font-semibold">
                                 IN‑HOUSE TODAY
                               </div>
@@ -805,7 +606,6 @@ export default function ReservationsList({
                           </td>
 
                           <td className="px-3 py-2">{s.nights}</td>
-
                           <td className="px-3 py-2">{statusPill(s.status)}</td>
 
                           <td className="px-3 py-2 max-w-[220px] truncate">{s.guestName}</td>
@@ -822,13 +622,14 @@ export default function ReservationsList({
 
                           <td className="px-3 py-2">
                             <div className="flex justify-end gap-2">
-                              <Link
-                                href={`/dashboard/folio/${folioId}`}
-                                className="text-xs px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                                title="Folio is per-night in current schema. This opens the first night."
-                              >
-                                Folio
-                              </Link>
+                              {folioId ? (
+                                <Link
+                                  href={`/dashboard/folio/${folioId}`}
+                                  className="text-xs px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+                                >
+                                  Folio
+                                </Link>
+                              ) : null}
 
                               <Link
                                 href="/dashboard/room-board"
@@ -840,7 +641,6 @@ export default function ReservationsList({
                           </td>
                         </tr>
 
-                        {/* Expanded nights */}
                         {expanded ? (
                           <tr className="border-b bg-white">
                             <td colSpan={showGuestDetails ? 10 : 8} className="px-3 py-3">
@@ -862,12 +662,16 @@ export default function ReservationsList({
                                     </thead>
 
                                     <tbody>
-                                      {s.reservations.map((r) => (
+                                      {s.reservations.map((r: Res) => (
                                         <tr key={r.id} className="border-t">
-                                          <td className="py-2 pr-3">{toLocalDateKey(r.reservationTime)}</td>
+                                          <td className="py-2 pr-3">
+                                            {toLocalDateKey(r.reservationTime)}
+                                          </td>
                                           <td className="py-2 pr-3">{statusPill(r.status)}</td>
                                           <td className="py-2 pr-3">{r.numOfDiners}</td>
-                                          <td className="py-2 pr-3">{formatLocalDateTime(r.reservationTime)}</td>
+                                          <td className="py-2 pr-3">
+                                            {formatLocalDateTime(r.reservationTime)}
+                                          </td>
                                           <td className="py-2 pr-3">
                                             <div className="flex justify-end gap-2">
                                               <Link
@@ -895,7 +699,7 @@ export default function ReservationsList({
             </div>
           )
         ) : (
-          // ------------------- NIGHTLY RESERVATION VIEW -------------------
+          // ------------------- NIGHTLY VIEW -------------------
           reservationListForTab.length === 0 ? (
             <div className="p-6 text-sm text-gray-600">No reservations match this filter.</div>
           ) : (

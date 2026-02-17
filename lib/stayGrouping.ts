@@ -79,6 +79,11 @@ export function todayLocalDateKey(): string {
   return toLocalDateKey(new Date());
 }
 
+export function isStayCheckedIn(stay: StayBlock): boolean {
+  // ✅ Per-stay check-in signal:
+  // Check-in flow sets at least one night to Confirmed (usually all).
+  return (stay.reservations ?? []).some((r) => r.status === ReservationStatus.Confirmed);
+}
 /**
  * Parse a YYYY-MM-DD dateKey into a local-midday Date to avoid DST issues
  * when adding days.

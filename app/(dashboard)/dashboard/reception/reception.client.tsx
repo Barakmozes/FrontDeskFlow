@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { useMutation, useQuery } from "@urql/next";
@@ -11,44 +11,38 @@ import TasksPanel from "@/app/components/Restaurant_interface/Tasks/TasksPanel";
 import WalkInWizardModal from "./WalkInWizardModal";
 
 import {
-  // data
+  // Queries
   GetAreasDocument,
   type GetAreasQuery,
   type GetAreasQueryVariables,
-
   GetTablesDocument,
   type GetTablesQuery,
   type GetTablesQueryVariables,
-
   GetReservationsDocument,
   type GetReservationsQuery,
   type GetReservationsQueryVariables,
-
   GetUserDocument,
   type GetUserQuery,
   type GetUserQueryVariables,
 
-  // actions
+  // Mutations
   ToggleTableReservationDocument,
   type ToggleTableReservationMutation,
   type ToggleTableReservationMutationVariables,
-
   EditReservationDocument,
   type EditReservationMutation,
   type EditReservationMutationVariables,
-
   CancelReservationDocument,
   type CancelReservationMutation,
   type CancelReservationMutationVariables,
-
   CompleteReservationDocument,
   type CompleteReservationMutation,
   type CompleteReservationMutationVariables,
-
   UpdateManyTablesDocument,
   type UpdateManyTablesMutation,
   type UpdateManyTablesMutationVariables,
 
+  // Enums
   ReservationStatus,
   Role,
 } from "@/graphql/generated";
@@ -57,6 +51,7 @@ import {
   coversDateKey,
   folioReservationIdForDateKey,
   groupReservationsIntoStays,
+  isStayCheckedIn,
   sumStayGuests,
   todayLocalDateKey,
   type StayBlock,
@@ -69,26 +64,23 @@ import {
   type HKStatus,
 } from "@/lib/housekeepingTags";
 
-// auto-post room charges (folio)
 import { ensureNightlyRoomCharges } from "@/lib/folioRoomCharges";
 import { parseHotelSettings } from "@/lib/hotelSettingsTags";
 import { parseRoomRateTags, getEffectiveNightlyRate } from "@/lib/roomRateTags";
 
+import ToggleOccupancy from "@/app/components/Restaurant_interface/Table_Settings/ToggleReservation";
+import { tableRowToRoomInStore } from "@/lib/AreaStore";
+
 /* ----------------------- Hotel settings tags constants ---------------------- */
-/**
- * Must match Settings -> OpeningHours.tsx
- * Stored inside Area.description via hotelSettingsTags helpers.
- */
 const TAG_BREAKFAST = "HOURS_BREAKFAST";
 const TAG_RESTAURANT = "HOURS_RESTAURANT";
 const TAG_ROOM_SERVICE = "HOURS_ROOM_SERVICE";
 
-/* ------------------------------- Helpers ----------------------------------- */
+/* --------------------------------- Helpers -------------------------------- */
 
 function fmtMoney(amount: number, currency: string) {
   const n = Number(amount);
   const safe = Number.isFinite(n) ? n : 0;
-
   const code = (currency || "USD").toUpperCase();
 
   try {
@@ -105,6 +97,10 @@ function fmtMoney(amount: number, currency: string) {
 function pickTag(tags: Record<string, string>, key: string): string | null {
   const v = (tags?.[key] ?? "").trim();
   return v.length ? v : null;
+}
+
+function normalizeRole(role: unknown): string {
+  return String(role ?? "").trim().toUpperCase();
 }
 
 /* ------------------------------- Small UI bits ------------------------------ */
@@ -267,6 +263,8 @@ function StayDetailsModal({
   todayKey,
   canOverride,
   canQuickCheckout,
+  roomReservedNow,
+  roomSpecialRequests,
   onCheckIn,
   onCheckOut,
   onCancelStay,
@@ -282,6 +280,12 @@ function StayDetailsModal({
   canOverride: boolean;
   canQuickCheckout: boolean;
 
+  /** ✅ IMPORTANT: use rooms query as source of truth (not stay.tableReservedNow snapshot) */
+  roomReservedNow: boolean;
+
+  /** ✅ Use up-to-date room tags if available */
+  roomSpecialRequests: string[];
+
   onCheckIn: (stay: StayBlock) => void;
   onCheckOut: (stay: StayBlock) => void;
   onCancelStay: (stay: StayBlock) => void;
@@ -290,23 +294,35 @@ function StayDetailsModal({
 
   const isToday = selectedDateKey === todayKey;
 
-  const { hk, notes } = parseHousekeepingTags(stay.specialRequests);
-  const roomStatus = deriveRoomStatus(stay.tableReservedNow, hk);
-
-  // Robust folio selection:
-  // - If selectedDateKey is inside stay, use it
-  // - Otherwise (future/past search), use the startDateKey
-  const folioDateKey = coversDateKey(stay, selectedDateKey) ? selectedDateKey : stay.startDateKey;
-  const folioId = folioReservationIdForDateKey(stay, folioDateKey);
-
+  const checkedIn = isStayCheckedIn(stay);
   const isArrivingToday = stay.startDateKey === todayKey;
   const isFutureArrival = stay.startDateKey > todayKey;
 
-  // Pricing preview
+  const effectiveSpecialRequests = Array.isArray(roomSpecialRequests)
+    ? roomSpecialRequests
+    : stay.specialRequests ?? [];
+
+  const { hk, notes } = parseHousekeepingTags(effectiveSpecialRequests);
+  const roomStatus = deriveRoomStatus(roomReservedNow, hk);
+
+  // Folio selection
+  const folioDateKey = coversDateKey(stay, selectedDateKey) ? selectedDateKey : stay.startDateKey;
+  const folioId = folioReservationIdForDateKey(stay, folioDateKey);
+
   const currency = hotelInfo?.currency ?? "USD";
   const baseRate = hotelInfo?.baseNightlyRate ?? 0;
-  const overrideRate = parseRoomRateTags(stay.specialRequests).rate.overrideNightlyRate ?? null;
+  const overrideRate = parseRoomRateTags(effectiveSpecialRequests).rate.overrideNightlyRate ?? null;
   const effectiveRate = getEffectiveNightlyRate(baseRate, overrideRate);
+
+  const checkInBlockedReason = (() => {
+    if (!isToday) return "Actions disabled in planning mode.";
+    if (!isArrivingToday) return `Check‑in allowed only on arrival day (${stay.startDateKey}).`;
+    if (checkedIn) return "Already checked in.";
+    if (roomReservedNow) return "Room is currently OCCUPIED. Check‑out current guest first.";
+    if (roomStatus !== "VACANT_CLEAN" && !canOverride)
+      return "Room is not READY (VACANT_CLEAN). Manager/Admin override required.";
+    return null;
+  })();
 
   return (
     <Modal isOpen={open} title={`Stay • Room ${stay.roomNumber}`} closeModal={onClose}>
@@ -318,7 +334,15 @@ function StayDetailsModal({
           <div className="mt-2 flex flex-wrap gap-2 items-center">
             <ResStatusBadge status={stay.status} />
             <HkBadge status={hk.status} />
-            <Badge label={roomStatus.replaceAll("_", " ")} tone={roomStatus === "OCCUPIED" ? "red" : "gray"} />
+            <Badge
+              label={roomStatus.replaceAll("_", " ")}
+              tone={roomStatus === "OCCUPIED" ? "red" : "gray"}
+            />
+            {checkedIn ? (
+              <Badge label="CHECKED‑IN" tone="green" />
+            ) : (
+              <Badge label="NOT CHECKED‑IN" tone="amber" />
+            )}
             <Badge label={`${stay.startDateKey} → ${stay.endDateKey}`} />
             <Badge label={`${stay.nights} night${stay.nights === 1 ? "" : "s"}`} />
             <Badge label={`${stay.guests} guest${stay.guests === 1 ? "" : "s"}`} />
@@ -327,13 +351,15 @@ function StayDetailsModal({
 
           {notes.length ? (
             <div className="mt-2 text-xs text-gray-600">
-              Notes: <span className="text-gray-800">{notes.slice(0, 2).join(" • ")}</span>
-              {notes.length > 2 ? <span className="text-gray-500"> • +{notes.length - 2} more</span> : null}
+              Notes:{" "}
+              <span className="text-gray-800">{notes.slice(0, 2).join(" • ")}</span>
+              {notes.length > 2 ? (
+                <span className="text-gray-500"> • +{notes.length - 2} more</span>
+              ) : null}
             </div>
           ) : null}
         </div>
 
-        {/* Hotel settings summary */}
         {hotelInfo ? (
           <div className="rounded-lg border p-3">
             <div className="text-xs text-gray-600">Hotel settings (from Settings)</div>
@@ -342,7 +368,9 @@ function StayDetailsModal({
               <div className="text-sm">
                 <div className="text-[11px] text-gray-500">Base nightly rate</div>
                 <div className="font-semibold text-gray-900">
-                  {hotelInfo.baseNightlyRate > 0 ? fmtMoney(hotelInfo.baseNightlyRate, currency) : "Not set"}
+                  {hotelInfo.baseNightlyRate > 0
+                    ? fmtMoney(hotelInfo.baseNightlyRate, currency)
+                    : "Not set"}
                 </div>
               </div>
 
@@ -350,7 +378,9 @@ function StayDetailsModal({
                 <div className="text-[11px] text-gray-500">Effective room rate</div>
                 <div className="font-semibold text-gray-900">
                   {effectiveRate > 0 ? fmtMoney(effectiveRate, currency) : "Not set"}
-                  {overrideRate != null ? <span className="text-xs text-gray-500"> (override)</span> : null}
+                  {overrideRate != null ? (
+                    <span className="text-xs text-gray-500"> (override)</span>
+                  ) : null}
                 </div>
               </div>
 
@@ -364,7 +394,8 @@ function StayDetailsModal({
               <div className="text-sm">
                 <div className="text-[11px] text-gray-500">Rooms today</div>
                 <div className="font-semibold text-gray-900">
-                  {hotelInfo.occupiedRooms} occupied • {hotelInfo.availableRooms} available (total {hotelInfo.totalRooms})
+                  {hotelInfo.occupiedRooms} occupied • {hotelInfo.availableRooms} available (total{" "}
+                  {hotelInfo.totalRooms})
                 </div>
               </div>
             </div>
@@ -405,20 +436,6 @@ function StayDetailsModal({
           ) : null}
         </div>
 
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-gray-600">Nights (debug-friendly)</div>
-          <div className="mt-2 grid gap-2">
-            {stay.reservations.map((r) => (
-              <div key={r.id} className="flex items-center justify-between text-xs">
-                <div className="text-gray-700">
-                  {stay.nightsList.find((n) => n.reservationId === r.id)?.dateKey ?? ""} • {r.numOfDiners} guests
-                </div>
-                <ResStatusBadge status={r.status} />
-              </div>
-            ))}
-          </div>
-        </div>
-
         <div className="flex flex-wrap justify-end gap-2">
           <Link
             href={`/dashboard/folio/${folioId}`}
@@ -427,30 +444,30 @@ function StayDetailsModal({
             Open folio
           </Link>
 
-          {/* Operational rules */}
           {!isToday ? (
             <div className="text-xs text-amber-700 px-2 py-2">
               Actions disabled (planning mode). Switch date to today to operate.
             </div>
           ) : null}
 
-          {isToday && !isArrivingToday ? (
-            <div className="text-xs text-gray-500 px-2 py-2">
-              This stay arrives on <b>{stay.startDateKey}</b>. Check‑in is only allowed on arrival day.
-            </div>
+          {isToday && !checkedIn ? (
+            <>
+              {checkInBlockedReason ? (
+                <div className="text-xs text-amber-700 px-2 py-2">{checkInBlockedReason}</div>
+              ) : null}
+
+              <button
+                onClick={() => onCheckIn(stay)}
+                disabled={!!checkInBlockedReason}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:bg-gray-300"
+                title={checkInBlockedReason ?? "Confirm stay + occupy room"}
+              >
+                Check‑in
+              </button>
+            </>
           ) : null}
 
-          {isToday && !stay.tableReservedNow && isArrivingToday ? (
-            <button
-              onClick={() => onCheckIn(stay)}
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
-              title={hk.status !== "CLEAN" && !canOverride ? "Requires Manager/Admin override" : "Confirm + Occupy room"}
-            >
-              Check‑in
-            </button>
-          ) : null}
-
-          {isToday && stay.tableReservedNow ? (
+          {isToday && checkedIn && roomReservedNow ? (
             canQuickCheckout ? (
               <button
                 onClick={() => onCheckOut(stay)}
@@ -491,10 +508,15 @@ const isActiveStay = (s: StayBlock) =>
   s.status === ReservationStatus.Pending || s.status === ReservationStatus.Confirmed;
 
 export default function ReceptionClient({ staffEmail }: { staffEmail: string | null }) {
-  // Requires urql Provider in dashboard layout
   const client = useClient();
 
-  const todayKey = useMemo(() => todayLocalDateKey(), []);
+  // ✅ keep “today” fresh (prevents stale view if user leaves page open)
+  const [todayKey, setTodayKey] = useState(() => todayLocalDateKey());
+  useEffect(() => {
+    const t = setInterval(() => setTodayKey(todayLocalDateKey()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   const [dateKey, setDateKey] = useState<string>(todayKey);
   const [hotelFilterId, setHotelFilterId] = useState<string>("ALL");
   const [tab, setTab] = useState<Tab>("ARRIVALS");
@@ -503,18 +525,44 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
   const [openStay, setOpenStay] = useState<StayBlock | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
 
-  // Who am I? (role controls overrides)
+  // Prevent “flash” in Unlinked Occupied while we are checking-in a room
+  const [checkingInRoomIds, setCheckingInRoomIds] = useState<Set<string>>(() => new Set());
+
+  // Who am I?
   const [{ data: meData }] = useQuery<GetUserQuery, GetUserQueryVariables>({
     query: GetUserDocument,
     variables: staffEmail ? { email: staffEmail } : ({} as any),
     pause: !staffEmail,
+    requestPolicy: "cache-and-network",
   });
 
   const myRole = meData?.getUser?.role ?? null;
-  const canOverride = myRole === Role.Admin || myRole === Role.Manager;
+
+  // ✅ Role logic (robust to enum/string)
+  const myRoleKey = useMemo(() => normalizeRole(myRole), [myRole]);
+  const canOverride = myRoleKey === "ADMIN" || myRoleKey === "MANAGER";
   const canQuickCheckout = canOverride;
 
-  // Hotels (Areas)
+  const canView = useMemo(() => {
+    // Adjust as needed when roles migrate.
+    // Using string compare avoids compile errors if enum grows.
+    return (
+      myRoleKey === "ADMIN" ||
+      myRoleKey === "MANAGER" ||
+      myRoleKey === "WAITER" ||
+      myRoleKey === "RECEPTION"
+    );
+  }, [myRoleKey]);
+
+  const [noPermToastShown, setNoPermToastShown] = useState(false);
+  useEffect(() => {
+    if (!noPermToastShown && staffEmail && myRole && !canView) {
+      toast.error("You do not have permission to view reception.");
+      setNoPermToastShown(true);
+    }
+  }, [noPermToastShown, staffEmail, myRole, canView]);
+
+  // Hotels
   const [{ data: hotelsData, fetching: hotelsFetching, error: hotelsError }] = useQuery<
     GetAreasQuery,
     GetAreasQueryVariables
@@ -529,7 +577,7 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
     return [...list].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   }, [hotelsData?.getAreas]);
 
-  // Rooms (Tables)
+  // Rooms
   const [{ data: roomsData, fetching: roomsFetching, error: roomsError }, refetchRooms] = useQuery<
     GetTablesQuery,
     GetTablesQueryVariables
@@ -593,9 +641,12 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
     return map;
   }, [rooms]);
 
-  const inHotel = (hid: string) => hotelFilterId === "ALL" || hotelFilterId === hid;
+  const inHotel = useCallback(
+    (hid: string) => hotelFilterId === "ALL" || hotelFilterId === hid,
+    [hotelFilterId]
+  );
 
-  // ✅ SINGLE source of truth (shared stay grouping)
+  // ✅ Single source of truth: stay grouping
   const staysAll = useMemo(() => groupReservationsIntoStays(reservations), [reservations]);
 
   const staysFiltered = useMemo(() => {
@@ -612,44 +663,48 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
 
       return room.includes(q) || name.includes(q) || email.includes(q) || phone.includes(q);
     });
-  }, [staysAll, hotelFilterId, search]);
+  }, [staysAll, inHotel, search]);
 
+  // ✅ Resolve openStay to freshest object after refresh
+  const openStayResolved = useMemo(() => {
+    if (!openStay) return null;
+    return staysAll.find((s) => s.stayId === openStay.stayId) ?? openStay;
+  }, [openStay, staysAll]);
+
+  /**
+   * ✅ ARRIVALS:
+   * Show stays arriving on dateKey until they are CHECKED‑IN.
+   * Do NOT hide arrivals just because the ROOM is currently occupied (reserved).
+   */
   const arrivals = useMemo(() => {
     return staysFiltered
-      .filter((s) => {
-        if (s.startDateKey !== dateKey) return false;
-        if (s.status === ReservationStatus.Cancelled) return false;
-        if (isToday && s.tableReservedNow) return false;
-        return isActiveStay(s);
-      })
-      .sort((a, b) => a.roomNumber - b.roomNumber);
-  }, [staysFiltered, dateKey, isToday]);
-
-  const departures = useMemo(() => {
-    return staysFiltered
-      .filter((s) => {
-        if (s.status === ReservationStatus.Cancelled) return false;
-        return s.endDateKey === dateKey;
-      })
+      .filter((s) => s.startDateKey === dateKey)
+      .filter((s) => s.status !== ReservationStatus.Cancelled)
+      .filter((s) => isActiveStay(s))
+      .filter((s) => !isStayCheckedIn(s))
       .sort((a, b) => a.roomNumber - b.roomNumber);
   }, [staysFiltered, dateKey]);
 
+  const departures = useMemo(() => {
+    return staysFiltered
+      .filter((s) => s.status !== ReservationStatus.Cancelled)
+      .filter((s) => s.endDateKey === dateKey)
+      .sort((a, b) => a.roomNumber - b.roomNumber);
+  }, [staysFiltered, dateKey]);
+
+  /**
+   * ✅ IN‑HOUSE:
+   * Today: show only stays that cover today AND are CHECKED‑IN.
+   * Planning mode: show projected occupancy (covers dateKey).
+   */
   const inHouse = useMemo(() => {
     return staysFiltered
-      .filter((s) => {
-        if (s.status === ReservationStatus.Cancelled) return false;
-        if (!coversDateKey(s, dateKey)) return false;
-        if (isToday) return s.tableReservedNow === true;
-        return true;
-      })
+      .filter((s) => s.status !== ReservationStatus.Cancelled)
+      .filter((s) => coversDateKey(s, dateKey))
+      .filter((s) => (isToday ? isStayCheckedIn(s) : true))
       .sort((a, b) => a.roomNumber - b.roomNumber);
   }, [staysFiltered, dateKey, isToday]);
 
-  /**
-   * ✅ Future reservations:
-   * - Active only (Pending/Confirmed)
-   * - Start AFTER selected dateKey
-   */
   const futureStays = useMemo(() => {
     return staysFiltered
       .filter((s) => isActiveStay(s))
@@ -668,43 +723,40 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
     return { roomNights, guests };
   }, [futureStays]);
 
-  const futureByHotel = useMemo(() => {
-    const m = new Map<
-      string,
-      { hotelId: string; hotelName: string; stays: number; guests: number; roomNights: number; nextArrival: string }
-    >();
+  /**
+   * ✅ FIXED: Unlinked occupied rooms
+   *
+   * We **must not** use `inHouse` as the sole reference because it can be stale
+   * right after a mutation and because `inHouse` is a view, not “truth”.
+   *
+   * Source of truth for occupancy: `rooms` (Tables) query.
+   * Source of truth for check‑in: `isStayCheckedIn(stay)` + `coversDateKey(stay, dateKey)`.
+   */
+  const checkedInRoomIdsForDate = useMemo(() => {
+    const set = new Set<string>();
 
-    for (const s of futureStays) {
-      const prev = m.get(s.hotelId);
-      const hotelName = hotelNameById.get(s.hotelId) ?? s.hotelId;
+    for (const s of staysFiltered) {
+      if (!isActiveStay(s)) continue;
+      if (!coversDateKey(s, dateKey)) continue;
+      if (!isStayCheckedIn(s)) continue;
 
-      if (!prev) {
-        m.set(s.hotelId, {
-          hotelId: s.hotelId,
-          hotelName,
-          stays: 1,
-          guests: s.guests ?? 0,
-          roomNights: s.nights ?? 0,
-          nextArrival: s.startDateKey,
-        });
-      } else {
-        prev.stays += 1;
-        prev.guests += s.guests ?? 0;
-        prev.roomNights += s.nights ?? 0;
-        if (s.startDateKey < prev.nextArrival) prev.nextArrival = s.startDateKey;
-      }
+      const room = roomsById.get(s.roomId);
+      if (room?.reserved) set.add(s.roomId);
     }
 
-    return Array.from(m.values()).sort((a, b) => a.nextArrival.localeCompare(b.nextArrival));
-  }, [futureStays, hotelNameById]);
+    return set;
+  }, [staysFiltered, dateKey, roomsById]);
 
   const unlinkedOccupied = useMemo(() => {
-    const occupiedRooms = rooms.filter((r) => r.reserved && inHotel(r.areaId));
-    const roomIdsWithStay = new Set(inHouse.map((s) => s.roomId));
+    const occupiedRooms = rooms.filter(
+      (r) => r.reserved && (hotelFilterId === "ALL" || hotelFilterId === r.areaId)
+    );
+
     return occupiedRooms
-      .filter((r) => !roomIdsWithStay.has(r.id))
+      .filter((r) => !checkingInRoomIds.has(r.id)) // prevent “flash” during check-in
+      .filter((r) => !checkedInRoomIdsForDate.has(r.id))
       .sort((a, b) => a.tableNumber - b.tableNumber);
-  }, [rooms, inHouse, hotelFilterId]);
+  }, [rooms, hotelFilterId, checkingInRoomIds, checkedInRoomIdsForDate]);
 
   const readiness = useMemo(() => {
     const relevantRooms = rooms.filter((r) => inHotel(r.areaId));
@@ -734,9 +786,8 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
     }
 
     blockers.sort((a, b) => a.roomNumber - b.roomNumber);
-
     return { counts, blockers };
-  }, [rooms, hotelFilterId]);
+  }, [rooms, inHotel]);
 
   const isLoading = hotelsFetching || roomsFetching || resFetching;
   const anyError = hotelsError || roomsError || resError;
@@ -749,7 +800,7 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
     };
   }, [arrivals, inHouse, departures]);
 
-  const listForTab =
+  const listForTab: StayBlock[] =
     tab === "ARRIVALS"
       ? arrivals
       : tab === "IN_HOUSE"
@@ -760,10 +811,10 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
       ? futureStays
       : staysFiltered;
 
-  const refreshAll = () => {
+  const refreshAll = useCallback(() => {
     refetchReservations({ requestPolicy: "network-only" });
     refetchRooms({ requestPolicy: "network-only" });
-  };
+  }, [refetchReservations, refetchRooms]);
 
   /* ---------------- Hotel settings meta (per hotel) ---------------- */
 
@@ -807,174 +858,264 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
       .map((h) => hotelInfoById.get(h.id))
       .filter(Boolean) as HotelInfo[];
 
-    const filtered = hotelFilterId === "ALL" ? all : all.filter((x) => x.id === hotelFilterId);
+    const filtered =
+      hotelFilterId === "ALL" ? all : all.filter((x) => x.id === hotelFilterId);
+
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [hotels, hotelInfoById, hotelFilterId]);
 
   const openStayHotelInfo = useMemo(() => {
-    if (!openStay) return null;
-    return hotelInfoById.get(openStay.hotelId) ?? null;
-  }, [openStay, hotelInfoById]);
+    if (!openStayResolved) return null;
+    return hotelInfoById.get(openStayResolved.hotelId) ?? null;
+  }, [openStayResolved, hotelInfoById]);
 
   /* ------------------------------- Actions -------------------------------- */
 
-  const checkInStay = async (stay: StayBlock) => {
-    if (!isToday) return toast.error("Check-in is only allowed for today.");
-    if (stay.startDateKey !== todayKey) return toast.error("This stay is not arriving today.");
+  const checkInStay = useCallback(
+    async (stay: StayBlock) => {
+      if (!staffEmail) return toast.error("Login required.");
+      if (!isToday) return toast.error("Check-in is only allowed for today.");
+      if (stay.startDateKey !== todayKey) return toast.error("This stay is not arriving today.");
+      if (isStayCheckedIn(stay)) return toast.error("This stay is already checked in.");
 
-    const room = roomsById.get(stay.roomId);
-    if (!room) return toast.error("Room not found.");
-    if (room.reserved) return toast.error("Room is already occupied.");
+      const room = roomsById.get(stay.roomId);
+      if (!room) return toast.error("Room not found.");
+      if (room.reserved) return toast.error("Room is already occupied.");
 
-    const { hk } = parseHousekeepingTags(room.specialRequests);
-    const derived = deriveRoomStatus(room.reserved, hk);
+      const { hk } = parseHousekeepingTags(room.specialRequests);
+      const derived = deriveRoomStatus(room.reserved, hk);
 
-    if (derived !== "VACANT_CLEAN" && !canOverride) {
-      toast.error("Room is not READY (vacant clean). Manager/Admin override required.");
-      return;
-    }
+      if (derived !== "VACANT_CLEAN" && !canOverride) {
+        toast.error("Room is not READY (vacant clean). Manager/Admin override required.");
+        return;
+      }
 
-    // 1) mark room occupied
-    const t = await toggleRoomOccupied({
-      toggleTableReservationId: room.id,
-      reserved: true,
-    });
-
-    if (t.error) {
-      console.error(t.error);
-      toast.error("Failed to mark room occupied.");
-      return;
-    }
-
-    // 2) confirm all nights
-    for (const r of stay.reservations) {
-      if (r.status === ReservationStatus.Cancelled || r.status === ReservationStatus.Completed) continue;
-      if (r.status === ReservationStatus.Confirmed) continue;
-
-      const e = await editReservation({
-        editReservationId: r.id,
-        status: ReservationStatus.Confirmed,
+      // Prevent “unlinked occupied” flash while we operate
+      setCheckingInRoomIds((prev) => {
+        const next = new Set(prev);
+        next.add(room.id);
+        return next;
       });
 
-      if (e.error) {
-        console.error(e.error);
-        toast.error("Room occupied, but failed to confirm all nights.");
-        break;
-      }
-    }
+      try {
+        // 1) mark room occupied
+        const t = await toggleRoomOccupied({
+          toggleTableReservationId: room.id,
+          reserved: true,
+        });
 
-    // 3) auto-post nightly room charges (if enabled in hotel settings)
-    const hotelInfo = hotelInfoById.get(stay.hotelId) ?? null;
+        if (t.error) {
+          console.error(t.error);
+          toast.error("Failed to mark room occupied.");
+          return;
+        }
 
-    if (hotelInfo?.autoPostRoomCharges) {
-      const override = parseRoomRateTags(room.specialRequests).rate.overrideNightlyRate ?? null;
-      const nightlyRate = getEffectiveNightlyRate(hotelInfo.baseNightlyRate, override);
+        // 2) confirm all nights (true “check‑in” signal)
+        let confirmedOk = true;
 
-      if (!nightlyRate || nightlyRate <= 0) {
-        toast.error("Checked-in, but nightly rate is not set. Set it in Settings.");
-      } else {
-        try {
-          const result = await ensureNightlyRoomCharges({
-            client,
-            tableId: stay.roomId,
-            hotelId: stay.hotelId,
-            roomNumber: stay.roomNumber,
-            guestEmail: stay.userEmail,
-            guestName: stay.guestName,
-            nightlyRate,
-            currency: hotelInfo.currency,
-            nights: stay.nightsList,
+        for (const r of stay.reservations) {
+          if (
+            r.status === ReservationStatus.Cancelled ||
+            r.status === ReservationStatus.Completed
+          )
+            continue;
+
+          if (r.status === ReservationStatus.Confirmed) continue;
+
+          const e = await editReservation({
+            editReservationId: r.id,
+            status: ReservationStatus.Confirmed,
           });
 
-          if (result.created > 0) {
-            toast.success(`Room charges posted: ${result.created} night${result.created === 1 ? "" : "s"}`);
+          if (e.error) {
+            console.error(e.error);
+            confirmedOk = false;
+            toast.error("Room occupied, but failed to confirm all nights.");
+            break;
           }
-        } catch (err) {
-          console.error(err);
-          toast.error("Checked-in, but room charges failed to post. Open folio and try again.");
+        }
+
+        // 3) auto-post nightly room charges (only if enabled + check-in succeeded)
+        const hotelInfo = hotelInfoById.get(stay.hotelId) ?? null;
+
+        if (confirmedOk && hotelInfo?.autoPostRoomCharges) {
+          const override =
+            parseRoomRateTags(room.specialRequests).rate.overrideNightlyRate ?? null;
+          const nightlyRate = getEffectiveNightlyRate(hotelInfo.baseNightlyRate, override);
+
+          if (!nightlyRate || nightlyRate <= 0) {
+            toast.error("Checked-in, but nightly rate is not set. Set it in Settings.");
+          } else {
+            try {
+              const result = await ensureNightlyRoomCharges({
+                client,
+                tableId: stay.roomId,
+                hotelId: stay.hotelId,
+                roomNumber: stay.roomNumber,
+                guestEmail: stay.userEmail,
+                guestName: stay.guestName,
+                nightlyRate,
+                currency: hotelInfo.currency,
+                nights: stay.nightsList,
+              });
+
+              if (result.created > 0) {
+                toast.success(
+                  `Room charges posted: ${result.created} night${result.created === 1 ? "" : "s"}`
+                );
+              }
+            } catch (err) {
+              console.error(err);
+              toast.error("Checked-in, but room charges failed to post. Open folio and try again.");
+            }
+          }
+        }
+
+        toast.success(`Checked-in: Room ${room.tableNumber}`);
+        setOpenStay(null);
+        refreshAll();
+      } finally {
+        setCheckingInRoomIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stay.roomId);
+          return next;
+        });
+      }
+    },
+    [
+      staffEmail,
+      isToday,
+      todayKey,
+      roomsById,
+      canOverride,
+      toggleRoomOccupied,
+      editReservation,
+      hotelInfoById,
+      client,
+      refreshAll,
+    ]
+  );
+
+  const cancelStay = useCallback(
+    async (stay: StayBlock) => {
+      const ok = window.confirm("Cancel this entire stay (all nights)?");
+      if (!ok) return;
+
+      for (const id of stay.reservationIds) {
+        const res = await cancelReservation({ cancelReservationId: id });
+        if (res.error) {
+          console.error(res.error);
+          toast.error("Failed to cancel all nights.");
+          return;
         }
       }
-    }
 
-    toast.success(`Checked-in: Room ${room.tableNumber}`);
-    setOpenStay(null);
-    refreshAll();
-  };
+      toast.success("Stay cancelled.");
+      setOpenStay(null);
+      refreshAll();
+    },
+    [cancelReservation, refreshAll]
+  );
 
-  const cancelStay = async (stay: StayBlock) => {
-    const ok = window.confirm("Cancel this entire stay (all nights)?");
-    if (!ok) return;
+  const quickCheckOutStay = useCallback(
+    async (stay: StayBlock) => {
+      if (!staffEmail) return toast.error("Login required.");
+      if (!isToday) return toast.error("Check-out is only allowed for today.");
 
-    for (const id of stay.reservationIds) {
-      const res = await cancelReservation({ cancelReservationId: id });
-      if (res.error) {
-        console.error(res.error);
-        toast.error("Failed to cancel all nights.");
+      if (!canQuickCheckout) {
+        toast.error("Quick check-out requires Manager/Admin. Use folio checkout.");
         return;
       }
-    }
 
-    toast.success("Stay cancelled.");
-    setOpenStay(null);
-    refreshAll();
-  };
+      const room = roomsById.get(stay.roomId);
+      if (!room) return toast.error("Room not found.");
+      if (!room.reserved) return toast.error("Room is already vacant.");
 
-  const quickCheckOutStay = async (stay: StayBlock) => {
-    if (!isToday) return toast.error("Check-out is only allowed for today.");
+      // 1) complete reservations
+      for (const r of stay.reservations) {
+        if (r.status === ReservationStatus.Cancelled || r.status === ReservationStatus.Completed)
+          continue;
 
-    const room = roomsById.get(stay.roomId);
-    if (!room) return toast.error("Room not found.");
-    if (!room.reserved) return toast.error("Room is already vacant.");
+        const c = await completeReservation({ completeReservationId: r.id });
+        if (c.error) {
+          console.error(c.error);
+          toast.error("Failed to complete all nights.");
+          return;
+        }
+      }
 
-    if (!canQuickCheckout) {
-      toast.error("Quick check-out requires Manager/Admin. Use folio checkout.");
-      return;
-    }
+      // 2) release room
+      const t = await toggleRoomOccupied({
+        toggleTableReservationId: room.id,
+        reserved: false,
+      });
 
-    // 1) complete reservations
-    for (const r of stay.reservations) {
-      if (r.status === ReservationStatus.Cancelled || r.status === ReservationStatus.Completed) continue;
-      const c = await completeReservation({ completeReservationId: r.id });
-      if (c.error) {
-        console.error(c.error);
-        toast.error("Failed to complete all nights.");
+      if (t.error) {
+        console.error(t.error);
+        toast.error("Completed stay, but failed to release room.");
         return;
       }
-    }
 
-    // 2) release room
-    const t = await toggleRoomOccupied({
-      toggleTableReservationId: room.id,
-      reserved: false,
-    });
-    if (t.error) {
-      console.error(t.error);
-      toast.error("Completed stay, but failed to release room.");
-      return;
-    }
+      // 3) mark DIRTY + cleaning list
+      const nextSpecialRequests = applyHousekeepingPatch(room.specialRequests, {
+        status: "DIRTY",
+        inCleaningList: true,
+      });
 
-    // 3) mark DIRTY + cleaning list
-    const nextSpecialRequests = applyHousekeepingPatch(room.specialRequests, {
-      status: "DIRTY",
-      inCleaningList: true,
-    });
+      const u = await updateManyTables({
+        updates: [{ id: room.id, specialRequests: nextSpecialRequests }],
+      });
 
-    const u = await updateManyTables({
-      updates: [{ id: room.id, specialRequests: nextSpecialRequests }],
-    });
+      if (u.error) {
+        console.error(u.error);
+        toast.error("Checked-out, but failed to mark room DIRTY.");
+        return;
+      }
 
-    if (u.error) {
-      console.error(u.error);
-      toast.error("Checked-out, but failed to mark room DIRTY.");
-      return;
-    }
-
-    toast.success(`Checked-out: Room ${room.tableNumber} marked DIRTY`);
-    setOpenStay(null);
-    refreshAll();
-  };
+      toast.success(`Checked-out: Room ${room.tableNumber} marked DIRTY`);
+      setOpenStay(null);
+      refreshAll();
+    },
+    [
+      staffEmail,
+      isToday,
+      canQuickCheckout,
+      roomsById,
+      completeReservation,
+      toggleRoomOccupied,
+      updateManyTables,
+      refreshAll,
+    ]
+  );
 
   /* -------------------------------- Render -------------------------------- */
+
+  if (!staffEmail) {
+    return (
+      <div className="px-6 py-6 bg-gray-50 min-h-screen">
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 shadow-sm">
+          Please sign in to view reception.
+        </div>
+      </div>
+    );
+  }
+
+  if (myRole && !canView) {
+    return (
+      <div className="px-6 py-6 bg-gray-50 min-h-screen">
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 shadow-sm">
+          You do not have permission to view this page.
+        </div>
+      </div>
+    );
+  }
+
+  // Prepare up-to-date room info for the modal
+  const modalRoom = openStayResolved ? roomsById.get(openStayResolved.roomId) : null;
+  const modalRoomReservedNow = Boolean(modalRoom?.reserved ?? openStayResolved?.tableReservedNow);
+  const modalRoomSpecialRequests = (modalRoom?.specialRequests ??
+    openStayResolved?.specialRequests ??
+    []) as string[];
 
   return (
     <div className="px-6 py-6 bg-gray-50 min-h-screen">
@@ -988,7 +1129,7 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
             </div>
 
             <p className="text-sm text-gray-600 mt-1">
-              Arrivals / Departures / In‑house guests — grouped into stays to prevent duplication and keep Ops consistent.
+              Arrivals / Departures / In‑house — stays are grouped to prevent duplication and keep Ops consistent.
             </p>
 
             {dateKey !== todayKey ? (
@@ -1045,15 +1186,13 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
             >
               Walk‑in Wizard
             </button>
-
-            <Link href="/dashboard/operations" className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50">
-              Operations →
-            </Link>
           </div>
         </div>
 
         {anyError ? (
-          <div className="mt-4 rounded-lg bg-red-50 text-red-700 text-sm p-3">Error: {anyError.message}</div>
+          <div className="mt-4 rounded-lg bg-red-50 text-red-700 text-sm p-3">
+            Error: {anyError.message}
+          </div>
         ) : null}
 
         {isLoading ? <div className="mt-3 text-sm text-gray-500">Loading…</div> : null}
@@ -1071,7 +1210,6 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
             readiness.counts.OUT_OF_ORDER ?? 0
           } OOO`}
         />
-        {/* Future */}
         <KpiCard
           title="Future reservations"
           value={`${futureStays.length}`}
@@ -1116,7 +1254,7 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
           <CardShell
             title={
               tab === "ARRIVALS"
-                ? "Arrivals"
+                ? "Arrivals (Check‑in button when NOT checked‑in)"
                 : tab === "IN_HOUSE"
                 ? "In‑house"
                 : tab === "DEPARTURES"
@@ -1128,52 +1266,26 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
             subtitle={
               tab === "FUTURE"
                 ? `Stays starting after ${dateKey}. Showing ${listForTab.length} stay(s).`
-                : `Showing ${listForTab.length} stay(s)`
+                : `Showing ${listForTab.length} stay(s).`
             }
           >
-            {/* Future breakdown by hotel */}
-            {tab === "FUTURE" && futureByHotel.length > 0 ? (
-              <div className="mb-3 rounded-lg border bg-gray-50 p-3">
-                <div className="text-xs font-semibold text-gray-700">Future load by hotel</div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {futureByHotel.map((row) => (
-                    <button
-                      key={row.hotelId}
-                      type="button"
-                      className="rounded-lg border bg-white p-3 text-left hover:bg-gray-50"
-                      onClick={() => {
-                        if (hotelFilterId === "ALL") setHotelFilterId(row.hotelId);
-                      }}
-                      title={hotelFilterId === "ALL" ? "Click to filter by this hotel" : undefined}
-                    >
-                      <div className="text-sm font-semibold text-gray-900">{row.hotelName}</div>
-                      <div className="mt-1 text-xs text-gray-600">
-                        {row.stays} stay(s) • {row.guests} guests • {row.roomNights} room‑nights
-                      </div>
-                      <div className="text-[11px] text-gray-500 mt-1">Next arrival: {row.nextArrival}</div>
-                    </button>
-                  ))}
-                </div>
-                {hotelFilterId !== "ALL" ? (
-                  <div className="mt-2 text-[11px] text-gray-500">
-                    Tip: set Hotel filter to <b>All hotels</b> to see a multi-hotel breakdown here.
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
             {listForTab.length === 0 ? (
               <div className="text-sm text-gray-500">No stays found for this view.</div>
             ) : (
               <div className="grid gap-2">
                 {listForTab.map((s) => {
-                  const { hk } = parseHousekeepingTags(s.specialRequests);
-                  const derived = deriveRoomStatus(s.tableReservedNow, hk);
+                  // ✅ Use rooms query as source of truth when available
+                  const room = roomsById.get(s.roomId) ?? null;
+                  const reservedNow = Boolean(room?.reserved ?? s.tableReservedNow);
+                  const specialRequests = (room?.specialRequests ?? s.specialRequests ?? []) as string[];
+
+                  const { hk } = parseHousekeepingTags(specialRequests);
+                  const derived = deriveRoomStatus(reservedNow, hk);
 
                   const info = hotelInfoById.get(s.hotelId) ?? null;
                   const currency = info?.currency ?? "USD";
                   const base = info?.baseNightlyRate ?? 0;
-                  const override = parseRoomRateTags(s.specialRequests).rate.overrideNightlyRate ?? null;
+                  const override = parseRoomRateTags(specialRequests).rate.overrideNightlyRate ?? null;
                   const effRate = getEffectiveNightlyRate(base, override);
 
                   const hotelName = info?.name ?? hotelNameById.get(s.hotelId) ?? "Hotel";
@@ -1181,12 +1293,42 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
                   const folioDateKey = coversDateKey(s, dateKey) ? dateKey : s.startDateKey;
                   const folioId = folioReservationIdForDateKey(s, folioDateKey);
 
+                  const checkedIn = isStayCheckedIn(s);
+
+                  // ✅ “Inline check-in” in Arrivals
+                  const showInlineCheckIn = tab === "ARRIVALS" && isToday && s.startDateKey === todayKey && !checkedIn;
+
+                  const inlineCheckInDisabled =
+                    !staffEmail ||
+                    toggling ||
+                    editing ||
+                    checkingInRoomIds.has(s.roomId) ||
+                    // cannot check in if room is physically occupied
+                    reservedNow ||
+                    // readiness requires override if not VACANT_CLEAN
+                    (derived !== "VACANT_CLEAN" && !canOverride);
+
+                  const inlineCheckInHint = !staffEmail
+                    ? "Login required"
+                    : reservedNow
+                    ? "Room is OCCUPIED. Check‑out current guest first."
+                    : derived !== "VACANT_CLEAN" && !canOverride
+                    ? "Room not READY (VACANT_CLEAN). Manager/Admin override required."
+                    : "Check‑in: occupy room + set reservations to Confirmed + post room charges (if enabled).";
+
                   return (
-                    <button
+                    <div
                       key={s.stayId}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setOpenStay(s)}
-                      className="w-full rounded-lg border bg-white p-3 text-left hover:bg-gray-50"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setOpenStay(s);
+                        }
+                      }}
+                      className="w-full rounded-lg border bg-white p-3 text-left hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-gray-300"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1194,12 +1336,21 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
                             <div className="text-sm font-semibold text-gray-900">
                               Room {s.roomNumber} • {s.guestName}
                             </div>
+
                             <ResStatusBadge status={s.status} />
                             <HkBadge status={hk.status} />
+
                             <Badge
                               label={derived.replaceAll("_", " ")}
                               tone={derived === "OCCUPIED" ? "red" : derived === "VACANT_CLEAN" ? "green" : "amber"}
                             />
+
+                            {checkedIn ? (
+                              <Badge label="CHECKED‑IN" tone="green" />
+                            ) : (
+                              <Badge label="NOT CHECKED‑IN" tone="amber" />
+                            )}
+
                             {effRate > 0 ? (
                               <Badge label={`Rate: ${fmtMoney(effRate, currency)}`} tone="gray" />
                             ) : (
@@ -1209,13 +1360,25 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
 
                           <div className="mt-1 text-xs text-gray-600">
                             {hotelName} • {s.startDateKey} → {s.endDateKey} • {s.nights} night(s) • {s.guests} guest(s)
-                            {tab === "FUTURE" ? (
-                              <span className="text-gray-500"> • Arrival: {s.startDateKey}</span>
-                            ) : null}
                           </div>
                         </div>
 
-                        <div className="shrink-0">
+                        <div className="shrink-0 flex items-center gap-2">
+                          {showInlineCheckIn ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                checkInStay(s);
+                              }}
+                              disabled={inlineCheckInDisabled}
+                              title={inlineCheckInHint}
+                              className="rounded-md bg-emerald-600 px-3 py-2 text-xs text-white hover:bg-emerald-700 disabled:bg-gray-300"
+                            >
+                              Check‑in
+                            </button>
+                          ) : null}
+
                           <Link
                             href={`/dashboard/folio/${folioId}`}
                             className="rounded-md border px-3 py-2 text-xs hover:bg-gray-50"
@@ -1225,7 +1388,7 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
                           </Link>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1234,8 +1397,8 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
 
           {/* Unlinked occupied rooms */}
           <CardShell
-            title="Occupied rooms without an active stay"
-            subtitle="These rooms are marked OCCUPIED but no stay matches the selected date."
+            title="Occupied rooms without an in‑house checked‑in stay"
+            subtitle="Rooms are OCCUPIED, but no checked‑in stay matches this operational date. Release the room and you will see new bookings."
           >
             {unlinkedOccupied.length === 0 ? (
               <div className="text-sm text-gray-500">None ✅</div>
@@ -1244,15 +1407,24 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
                 {unlinkedOccupied.map((r) => {
                   const { hk } = parseHousekeepingTags(r.specialRequests);
                   const derived = deriveRoomStatus(r.reserved, hk);
+
                   return (
                     <div key={r.id} className="rounded-lg border p-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold">Room {r.tableNumber}</div>
+
+                        <ToggleOccupancy
+                          room={tableRowToRoomInStore(r)}
+                          // ✅ MUST refetch rooms + reservations to keep stays consistent
+                          onChanged={refreshAll}
+                        />
+
                         <div className="flex gap-2">
                           <HkBadge status={hk.status} />
                           <Badge label={derived.replaceAll("_", " ")} tone="red" />
                         </div>
                       </div>
+
                       <div className="text-xs text-gray-500 mt-1">
                         Hotel: {hotelNameById.get(r.areaId) ?? r.areaId}
                       </div>
@@ -1288,16 +1460,11 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
                     </div>
                   </div>
                 ))}
-                {readiness.blockers.length > 12 ? (
-                  <div className="text-xs text-gray-500">
-                    Showing first 12 of {readiness.blockers.length}. Filter by hotel to narrow.
-                  </div>
-                ) : null}
               </div>
             )}
           </CardShell>
 
-          {/* ✅ NEW: Hotel settings summary (per hotel) */}
+          {/* Hotel settings summary */}
           <CardShell
             title="Hotel settings summary"
             subtitle="Admin-defined per-hotel settings (Opening hours + Pricing + Policy)"
@@ -1329,7 +1496,10 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
                       </div>
 
                       <div className="shrink-0 flex flex-col gap-1 items-end">
-                        <Badge label={h.autoPostRoomCharges ? "Auto charges: ON" : "Auto charges: OFF"} tone={h.autoPostRoomCharges ? "green" : "amber"} />
+                        <Badge
+                          label={h.autoPostRoomCharges ? "Auto charges: ON" : "Auto charges: OFF"}
+                          tone={h.autoPostRoomCharges ? "green" : "amber"}
+                        />
                         {hotelFilterId === "ALL" ? (
                           <button
                             type="button"
@@ -1370,27 +1540,27 @@ export default function ReceptionClient({ staffEmail }: { staffEmail: string | n
       </div>
 
       <StayDetailsModal
-        open={!!openStay}
+        open={!!openStayResolved}
         onClose={() => setOpenStay(null)}
-        stay={openStay}
+        stay={openStayResolved}
         hotelInfo={openStayHotelInfo}
         selectedDateKey={dateKey}
         todayKey={todayKey}
         canOverride={canOverride}
         canQuickCheckout={canQuickCheckout}
+        roomReservedNow={modalRoomReservedNow}
+        roomSpecialRequests={modalRoomSpecialRequests}
         onCheckIn={checkInStay}
         onCheckOut={quickCheckOutStay}
         onCancelStay={cancelStay}
       />
 
-{/* Walk-in wizard */}
+      {/* Walk-in wizard */}
       <WalkInWizardModal
         open={walkInOpen}
         onClose={() => setWalkInOpen(false)}
         staffEmail={staffEmail}
-        staffRole={myRole}
-        // If your WalkInWizardModal supports onCreated, keep it.
-        // If not, remove this prop (or add it in the modal).
+        staffRole={myRole as any}
         onCreated={() => {
           setWalkInOpen(false);
           refreshAll();

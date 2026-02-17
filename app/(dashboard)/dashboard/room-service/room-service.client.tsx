@@ -25,7 +25,20 @@ import {
   GetTablesQuery,
   GetTablesQueryVariables,
   OrderStatus,
+    GetReservationsDocument,
+  type GetReservationsQuery,
+  type GetReservationsQueryVariables,
+  ReservationStatus,
 } from "@/graphql/generated";
+
+import {
+  coversDateKey,
+  folioReservationIdForDateKey,
+  groupReservationsIntoStays,
+  isStayCheckedIn,
+  todayLocalDateKey,
+  type StayBlock,
+} from "@/lib/stayGrouping";
 
 import { useCartStore } from "@/lib/store";
 import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
@@ -102,6 +115,42 @@ export default function RoomServiceClient() {
     query: GetAreasNameDescriptionDocument,
     variables: { orderBy: { createdAt: "asc" as any } },
   });
+
+  const todayKey = useMemo(() => todayLocalDateKey(), []);
+
+const [{ data: resData }] = useQuery<GetReservationsQuery, GetReservationsQueryVariables>({
+  query: GetReservationsDocument,
+  variables: {},
+  requestPolicy: "cache-and-network",
+});
+
+const reservations = resData?.getReservations ?? [];
+
+const activeStay: StayBlock | null = useMemo(() => {
+  if (!tableId) return null;
+
+  const roomReservations = reservations
+    .filter((r: any) => ((r?.tableId ?? r?.table?.id) === tableId))
+    .filter((r: any) => r.status !== ReservationStatus.Cancelled);
+
+  const stays = groupReservationsIntoStays(roomReservations as any) as unknown as StayBlock[];
+
+  // Prefer checked-in stay covering today; fallback to any stay covering today
+  return (
+    stays.find((s) => coversDateKey(s, todayKey) && isStayCheckedIn(s)) ??
+    stays.find((s) => coversDateKey(s, todayKey)) ??
+    stays.find((s) => s.startDateKey === todayKey) ??
+    null
+  );
+}, [reservations, tableId, todayKey]);
+
+const defaultGuestEmail = (activeStay?.userEmail ?? "").trim();
+const defaultGuestName = (activeStay?.guestName ?? "").trim();
+
+const folioReservationIdForToday = useMemo(() => {
+  if (!activeStay) return null;
+  return folioReservationIdForDateKey(activeStay, todayKey);
+}, [activeStay, todayKey]);
 
   useEffect(() => {
     const fetched = hotelsData?.getAreasNameDescription;
@@ -301,39 +350,85 @@ export default function RoomServiceClient() {
   const handleIncrease = (id: string) => {
     increaseCartItem(cartItems, id);
   };
+const openConfirm = () => {
+  if (!tableId) return toast.error("Select a room first.");
+  if (!cartItems?.length) return toast.error("Cart is empty.");
+  if (!staffEmail) return toast.error("You must be logged in to place an order.");
 
-  const openConfirm = () => {
-    if (!tableId) {
-      toast.error("Select a room first.");
-      return;
-    }
-    if (!cartItems?.length) {
+  // ✅ Auto-fill from booking if available
+  if (!guestEmailOverride.trim() && defaultGuestEmail) setGuestEmailOverride(defaultGuestEmail);
+  if (!guestNameOverride.trim() && defaultGuestName) setGuestNameOverride(defaultGuestName);
+
+  setConfirmOpen(true);
+};
+
+
+const placeRoomServiceOrder = async () => {
+  if (!tableId) return;
+
+  // Optional: prevent double-click/double submit
+  if ((placeRoomServiceOrder as any)._busy) return;
+  (placeRoomServiceOrder as any)._busy = true;
+
+  try {
+    // Basic validation
+    if (!cartItems || cartItems.length === 0) {
       toast.error("Cart is empty.");
       return;
     }
-    if (!staffEmail) {
-      toast.error("You must be logged in to place an order.");
+
+    // ✅ Use the in-house guest by default (system-wide linking expects guestEmail)
+    const emailToUse =
+      guestEmailOverride.trim() || defaultGuestEmail || staffEmail || "";
+    const nameToUse =
+      guestNameOverride.trim() || defaultGuestName || staffName || "Guest";
+
+    if (!emailToUse) {
+      toast.error(
+        "Missing guest email. Select a room with an active stay or enter an email."
+      );
       return;
     }
-    setConfirmOpen(true);
-  };
 
-  const placeRoomServiceOrder = async () => {
-    if (!tableId) return;
+    const safeServiceFee = Number.isFinite(serviceFee) ? serviceFee : 0;
+    const safeDiscount =
+      Number.isFinite(discount) && discount > 0 ? discount : null;
 
-    const emailToUse = guestEmailOverride.trim() || staffEmail;
-    const nameToUse = guestNameOverride.trim() || staffName;
+    if (!Number.isFinite(total) || total < 0) {
+      toast.error("Invalid total. Please refresh and try again.");
+      return;
+    }
+
+    // ✅ Optional but useful: embed folio/linking meta in the note
+    const metaLine = [
+      "FOLIO_META",
+      "kind=ROOM_SERVICE",
+      `dateKey=${todayKey}`,
+      `tableId=${tableId}`,
+      tableNumber != null ? `roomNumber=${tableNumber}` : null,
+      folioReservationIdForToday
+        ? `reservationId=${folioReservationIdForToday}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("|");
+
+    const combinedNote = [note.trim(), metaLine].filter(Boolean).join("\n");
 
     const vars: AddOrderToTableMutationVariables = {
       tableId,
       cart: cartItems ?? [],
-      orderNumber: createOrderNumber("ROOM-service"),
-      serviceFee: Number.isFinite(serviceFee) ? serviceFee : 0,
+
+      // ✅ CRITICAL FIX:
+      // Do NOT use "ROOM-" here. "ROOM-" is reserved for nightly room charges.
+      orderNumber: createOrderNumber("RS-"),
+
+      serviceFee: safeServiceFee,
       total,
       userEmail: emailToUse,
       userName: nameToUse,
-      discount: Number.isFinite(discount) && discount > 0 ? discount : null,
-      note: note.trim() || null,
+      discount: safeDiscount,
+      note: combinedNote || null,
       paymentToken: null, // Room service: no online payment in this step
     };
 
@@ -355,14 +450,19 @@ export default function RoomServiceClient() {
     useCartStore.getState().resetCart();
 
     // Restore selection (resetCart clears tableId/tableNumber)
-    if (prevTableId && prevTableNumber) {
+    if (prevTableId && prevTableNumber != null) {
       useCartStore.getState().startOrderForTable(prevTableId, prevTableNumber);
     }
 
     // Refresh room + order list
     reexecuteOrders({ requestPolicy: "network-only" });
     reexecuteRooms({ requestPolicy: "network-only" });
-  };
+  } finally {
+    (placeRoomServiceOrder as any)._busy = false;
+  }
+};
+
+
 
   const updateOrderStatus = async (orderId: string, next: OrderStatus) => {
     const res = await editOrder({

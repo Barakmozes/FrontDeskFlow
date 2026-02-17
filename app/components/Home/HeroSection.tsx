@@ -124,7 +124,7 @@ export default function HeroSection() {
             <span className="ml-1 text-black">4.5 rating</span>
           </div>
           <div className="mt-2">
-            <RestaurantDetailsModal />
+         
           </div>
         </div>
       </div>

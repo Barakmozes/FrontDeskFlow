@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useDrag } from "react-dnd";
+import { getEmptyImage } from "react-dnd-html5-backend";
 
 import Modal from "../Common/Modal";
-
 import type { RoomInStore } from "@/lib/AreaStore";
 
 import ToggleOccupancy from "./Table_Settings/ToggleReservation";
@@ -17,12 +17,12 @@ interface RoomPinProps {
   room: RoomInStore;
 }
 
-/**
- * RoomPin (map view)
- * - Backend Table -> UI Room
- * - A draggable marker on the hotel floor plan.
- * - Click to open room details (occupancy, bookings, notes).
- */
+type DragItem = {
+  roomId: string;
+  left: number;
+  top: number;
+};
+
 const RoomPin: React.FC<RoomPinProps> = ({ room }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -36,16 +36,21 @@ const RoomPin: React.FC<RoomPinProps> = ({ room }) => {
 
   const title = useMemo(() => `Room ${room.roomNumber}`, [room.roomNumber]);
 
-  const [{ isDragging }, dragRef] = useDrag(
+  const [{ isDragging }, dragRef, preview] = useDrag(
     () => ({
       type: "ROOM",
-      item: { roomId: room.id },
-      collect: (monitor) => ({
-        isDragging: monitor.isDragging(),
-      }),
+      // ✅ שולחים גם את המיקום ההתחלתי
+      item: (): DragItem => ({ roomId: room.id, left: x, top: y }),
+      collect: (monitor) => ({ isDragging: monitor.isDragging() }),
     }),
-    [room.id]
+    [room.id, x, y]
   );
+
+  // ✅ אופציונלי אבל מומלץ: מבטל את תמונת ה-ghost של הדפדפן,
+  // ואז אתה רואה את השולחן עצמו זז בצורה הכי "נעימה"
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
 
   return (
     <>
@@ -53,7 +58,7 @@ const RoomPin: React.FC<RoomPinProps> = ({ room }) => {
         ref={dragRef}
         className={`absolute select-none ${isDragging ? "opacity-60" : "opacity-100"}`}
         style={{
-          transform: `translate(${x}px, ${y}px)`,
+          transform: `translate3d(${x}px, ${y}px, 0)`,
           transformOrigin: "top left",
           zIndex: isDragging ? 50 : 10,
         }}
@@ -62,31 +67,24 @@ const RoomPin: React.FC<RoomPinProps> = ({ room }) => {
         <button
           type="button"
           onClick={() => {
+            // נשאיר כמו אצלך – בפועל לרוב drag לא יורה click
             if (!isDragging) setIsOpen(true);
           }}
           className={`flex items-center gap-2 px-2 py-1 rounded-lg border shadow-sm hover:shadow-md transition cursor-grab active:cursor-grabbing ${statusClass}`}
         >
           <span className="text-xs font-semibold">{room.roomNumber}</span>
-          {room.dirty ? (
-            <span className="text-[10px] font-semibold text-orange-700">●</span>
-          ) : null}
+          {room.dirty ? <span className="text-[10px] font-semibold text-orange-700">●</span> : null}
         </button>
       </div>
 
-      <Modal
-        isOpen={isOpen}
-        closeModal={() => setIsOpen(false)}
-        title={`${title} — ${statusLabel}`}
-      >
+      <Modal isOpen={isOpen} closeModal={() => setIsOpen(false)} title={`${title} — ${statusLabel}`}>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-700">
               <div>
                 <span className="font-semibold">Max guests:</span> {room.capacity}
               </div>
-              <div className="text-xs text-gray-500">
-                Hotel ID: {room.hotelId}
-              </div>
+              <div className="text-xs text-gray-500">Hotel ID: {room.hotelId}</div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -96,7 +94,7 @@ const RoomPin: React.FC<RoomPinProps> = ({ room }) => {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <ToggleOccupancy room={room} />
+            <ToggleOccupancy room={room}  />
             <RoomBookings room={room} />
           </div>
 

@@ -246,6 +246,7 @@ export default function RegisterCustomerForm() {
       </div>
 
       <div className="flex items-center justify-end gap-2">
+        {/* לשלוח לקבלה לאחר הרשמה ממוצלחת. */}
         <button
           type="submit"
           disabled={submitting}

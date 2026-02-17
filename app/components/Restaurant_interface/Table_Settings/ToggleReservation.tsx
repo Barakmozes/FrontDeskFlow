@@ -14,7 +14,9 @@ import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
 
 interface ToggleOccupancyProps {
   room: RoomInStore;
+  onChanged?: () => void;
 }
+
 
 /**
  * ToggleOccupancy

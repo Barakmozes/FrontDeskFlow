@@ -31,6 +31,8 @@ import DeleteHotelModal from "./CRUD_Zone-CRUD_Table/DeleteZoneModal";
 import EditHotelModal from "./CRUD_Zone-CRUD_Table/EditZoneModal";
 import AddRoomModal from "./CRUD_Zone-CRUD_Table/AddTableModal";
 import AddReservationModal from "./CRUD_Reservation/AddReservationModal";
+import DeleteTableModal from "./CRUD_Zone-CRUD_Table/DeleteTableModal";
+import DeleteTableModals from "./CRUD_Zone-CRUD_Table/Deleteroom_fromstart";
 
 type ListFilter = "ALL" | "AVAILABLE" | "OCCUPIED";
 
@@ -378,7 +380,7 @@ map.forEach((list, roomId) => {
             <DeleteHotelModal areas={hotels} areaSelectToDelete={selectedHotel} />
             <EditHotelModal areas={hotels} areaSelectToEdit={selectedHotel} />
             <AddRoomModal hotels={hotels} selectedHotel={selectedHotel} />
-
+                    <DeleteTableModals hotels={hotels} selectedHotel={selectedHotel} /> 
             <div className="w-px bg-gray-200 mx-1" />
 
             <button

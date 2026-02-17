@@ -183,25 +183,9 @@ export default function RoomSummaryCard({
         >
           {expanded ? "Hide" : "Details"}
         </button>
-      </div>
+              <div className="mt-3 flex flex-wrap gap-2">
 
-      {/* Actions */}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={startRoomService}
-          className="text-xs bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition"
-        >
-          Room Service
-        </button>
 
-        <button
-          type="button"
-          onClick={() => openReservationModal(room.id, room.roomNumber)}
-          className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 transition"
-        >
-          New Booking
-        </button>
 
         <button
           type="button"
@@ -217,6 +201,10 @@ export default function RoomSummaryCard({
           {toggling ? "Updating…" : room.isOccupied ? "Mark Vacant" : "Mark Occupied"}
         </button>
       </div>
+      </div>
+
+      {/* Actions */}
+
 
       {/* Expanded details */}
       {expanded ? (

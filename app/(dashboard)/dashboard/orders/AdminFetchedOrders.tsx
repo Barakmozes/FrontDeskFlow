@@ -92,6 +92,7 @@ export function AdminFetchedOrders({
     query: GetOrdersDocument,
     variables,
     requestPolicy: "cache-and-network",
+     
   });
 
   const orders = (data?.getOrders.edges ?? []).filter(Boolean) as OrdersEdge[];

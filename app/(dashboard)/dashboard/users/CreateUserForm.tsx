@@ -8,7 +8,13 @@ type Props = {
   onCancel: () => void;
 };
 
-const ROLES: Role[] = ["USER", "ADMIN", "DELIVERY", "WAITER", "CHEF", "MANAGER"];
+const ROLES: Role[] = [
+  "RECEPTION",
+  "HOUSEKEEPING",
+  "ACCOUNTING",
+  "MANAGER",
+  "ADMIN",
+];
 
 export default function CreateUserForm({ onSuccess, onCancel }: Props) {
   const [name, setName] = useState("");

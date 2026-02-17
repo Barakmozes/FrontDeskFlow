@@ -104,7 +104,7 @@ export default function Header({ user }: HeaderProps) {
     >
       <div className="px-4 md:px-12 py-3">
         {/* Row 1 */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-center gap-3">
           {/* Left cluster: Sidebar + Brand */}
           <div className="flex items-center gap-3">
             <button
@@ -155,7 +155,7 @@ export default function Header({ user }: HeaderProps) {
               </button>
             ) : null}
 
-            {/* ✅ Cart */}
+            {/* ✅ Cart
             {user ? (
               <Link
                 href="/cart"
@@ -192,7 +192,7 @@ export default function Header({ user }: HeaderProps) {
                   {cartCount}
                 </span>
               </button>
-            )}
+            )} */}
 
             {user ? (
               <AccountDropDown user={user} />

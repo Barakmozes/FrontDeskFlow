@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import type { BasicArea } from "@/graphql/generated";
+import type { GetTablesQuery } from "@/graphql/generated";
 
 /**
  * Hotel Layout Store (client-side)
@@ -12,7 +13,7 @@ import type { BasicArea } from "@/graphql/generated";
  *
  * This store provides HOTEL/ROOM vocabulary to the UI.
  */
-
+export type TableRow = GetTablesQuery["getTables"][number];
 export interface RoomInStore {
   id: string;
   roomNumber: number; // backend: tableNumber
@@ -187,3 +188,22 @@ export const useHotelStore = create<HotelStore>()(
  */
 export const useRestaurantStore = useHotelStore;
 export type TableInStore = RoomInStore;
+
+export function tableRowToRoomInStore(t: TableRow): RoomInStore {
+  const pos = (t.position ?? {}) as any;
+
+  return {
+    id: t.id,
+    roomNumber: t.tableNumber,      // Table.tableNumber -> Room.roomNumber
+    hotelId: t.areaId,              // Table.areaId -> Room.hotelId
+    position: {
+      x: typeof pos.x === "number" ? pos.x : 0,
+      y: typeof pos.y === "number" ? pos.y : 0,
+    },
+    capacity: Number(t.diners ?? 0), // Table.diners -> Room.capacity
+    isOccupied: Boolean(t.reserved), // Table.reserved -> Room.isOccupied
+    notes: Array.isArray(t.specialRequests) ? t.specialRequests : [], // Table.specialRequests -> Room.notes
+    createdAt: String(t.createdAt ?? ""),
+    updatedAt: String(t.updatedAt ?? ""),
+  };
+}

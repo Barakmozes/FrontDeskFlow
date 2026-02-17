@@ -19,22 +19,22 @@ const Footer = () => {
       {/* Footer Large Screen */}
       <section className="hidden md:flex  justify-around items-center border-t border-slate-100 py-12 px-12 ">
         <div className="items-center">
-          <Image src="/img/logo.png" alt="logo" width={70} height={70} className="rounded-full"/>
+          <Image src="/img/logo.png" alt="logo" width={100} height={100} className="rounded-full"/>
         </div>
 
-        <div className=" flex flex-col space-y-2">
+        {/* <div className=" flex flex-col space-y-2">
           <h2 className="font-semibold">ABOUT</h2>
           <Link href="/contact-us">Contact Us</Link>
           <Link href={"/help"}>Help Center</Link>
           <Link href={"/faqs"}>FAQ</Link>
-        </div>
+        </div> */}
 
-        <div className=" flex flex-col  space-y-2">
+        {/* <div className=" flex flex-col  space-y-2">
           <h4 className=" font-semibold">HELP & GUIDE</h4>
           <Link href="/terms-of-use">Term Of Use</Link>
           <Link href="/privacy">Privacy Policy</Link>
           <Link href="/shipping">Shipping & Delivery</Link>
-        </div>
+        </div> */}
       </section>
       <section className="hidden md:flex py-12 px-12 justify-center">
         <p> {Year} _BaRak_ (Pty) Ltd</p>

@@ -21,10 +21,9 @@ export default async function Home() {
   
     
       
-          <HeroSection />
-        
-
-        {/* <ZoneRestaurant /> */}
+          {/* <HeroSection /> */}
+    
+         {(user?.role === "ADMIN" || user?.role === "MANAGER") && <ZoneRestaurant />}
  
       <Footer />
     </main>

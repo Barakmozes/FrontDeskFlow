@@ -23,10 +23,7 @@ query GetOrders($first: Int, $after: ID) {
         discount
         note
         deliveryAddress
-
-        # ✅ REQUIRED for “split by order type”
         tableId
-
         userEmail
         userName
         userPhone

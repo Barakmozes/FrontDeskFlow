@@ -58,7 +58,7 @@ const SideBar = ({ user }: Props) => {
               </div>
             </div>
 
-            {Links.map((link) => (
+            {/* {Links.map((link) => (
               <Link
                 href={link.url}
                 className="flex items-center p-3 transition-all font-semibold hover:text-green-500 hover:bg-green-100 rounded-md"
@@ -69,7 +69,7 @@ const SideBar = ({ user }: Props) => {
                 })}
                 <span className="pl-2">{link.title}</span>
               </Link>
-            ))}
+            ))} */}
             <button className="flex items-center p-3 transition-all font-semibold"
             onClick={() => signOut({ callbackUrl: "/" })}
             >
