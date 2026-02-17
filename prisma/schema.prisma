@@ -125,7 +125,7 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
-  role          Role      @default(USER)
+  role          Role      @default(ADMIN)
   profile       Profile?
 
   // Old "order" array, preserved from old schema
