@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { useSession } from "next-auth/react";
+import { useMemo, useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { getCurrentUser } from "@/lib/session";
 import {
   NotificationPriority,
   NotificationStatus,
@@ -11,7 +11,6 @@ import {
   useGetNotificationsQuery,
   useGetTablesQuery,
   useGetUserNotificationsQuery,
-  useGetUserQuery,
   useGetUsersQuery,
   useUpdateNotificationMutation,
 } from "@/graphql/generated";
@@ -31,11 +30,8 @@ function formatWhen(dt: any) {
 }
 
 function badgeClass(kind: "status" | "priority", value: string) {
-  // Small, consistent “edge component” style for badges
   if (kind === "status") {
-    return value === "OPEN"
-      ? "bg-amber-100 text-amber-800"
-      : "bg-emerald-100 text-emerald-800";
+    return value === "OPEN" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800";
   }
   if (value === NotificationPriority.High) return "bg-red-100 text-red-800";
   if (value === NotificationPriority.Low) return "bg-gray-100 text-gray-800";
@@ -44,27 +40,33 @@ function badgeClass(kind: "status" | "priority", value: string) {
 
 export default function TasksPage() {
   const ui = useTasksUI();
-  const { data: session } = useSession();
-
-  const myEmail = session?.user?.email ?? null;
   const selectedHotel = useHotelStore((s) => s.selectedHotel);
 
-  // Who am I? (role check)
-  const [{ data: meData }] = useGetUserQuery({
-    variables: myEmail ? { email: myEmail } : ({} as any),
-    pause: !myEmail,
-  });
+  const [myEmail, setMyEmail] = useState<string | null>(null);
+  const [myName, setMyName] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<Role | null>(null);
 
-  const myRole = meData?.getUser?.role ?? null;
+  // Load current user on client
+  useEffect(() => {
+    async function loadUser() {
+      const user = await getCurrentUser();
+      setMyEmail(user?.email ?? null);
+      setMyName(user?.name ?? null);
+         // Force cast safely
+    const role = user?.role as Role | undefined;
+    setMyRole(role ?? null);
+    }
+    loadUser();
+  }, []);
+
   const canViewAll = myRole === Role.Admin || myRole === Role.Manager;
-
   const viewAll = canViewAll && ui.viewScope === "ALL";
 
-  // Employees list (for assignment) - only needed if you can create tasks for others
+  // Employees list
   const [{ data: usersData }] = useGetUsersQuery({ pause: !canViewAll });
   const assignees = usersData?.getUsers ?? [];
 
-  // Hotels + Rooms (so tasks can link to room context)
+  // Hotels + Rooms
   const [{ data: hotelsData }] = useGetAreasNameDescriptionQuery();
   const hotels = hotelsData?.getAreasNameDescription ?? [];
 
@@ -77,16 +79,12 @@ export default function TasksPage() {
     return map;
   }, [hotels]);
 
-  // Tasks query: either ALL or MINE
-  const [{ data: allNotifsData, fetching: fetchingAll }, reexecAll] = useGetNotificationsQuery({
-    pause: !viewAll,
+  // Tasks query: ALL or MINE
+  const [{ data: allNotifsData, fetching: fetchingAll }, reexecAll] = useGetNotificationsQuery({ pause: !viewAll });
+  const [{ data: myNotifsData, fetching: fetchingMine }, reexecMine] = useGetUserNotificationsQuery({
+    variables: myEmail ? { userEmail: myEmail } : ({} as any),
+    pause: !myEmail || viewAll,
   });
-
-  const [{ data: myNotifsData, fetching: fetchingMine }, reexecMine] =
-    useGetUserNotificationsQuery({
-      variables: myEmail ? { userEmail: myEmail } : ({} as any),
-      pause: !myEmail || viewAll,
-    });
 
   const notifications = (viewAll ? allNotifsData?.getNotifications : myNotifsData?.getUserNotifications) ?? [];
   const taskNotifications = notifications.filter((n) => n.type === "TASK");
@@ -110,49 +108,43 @@ export default function TasksPage() {
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
-      // status filter
       if (ui.statusFilter !== "ALL") {
         const isOpen = t.status === NotificationStatus.Unread;
         if (ui.statusFilter === "OPEN" && !isOpen) return false;
         if (ui.statusFilter === "DONE" && isOpen) return false;
       }
-      // priority filter
       if (ui.priorityFilter !== "ALL" && t.priority !== ui.priorityFilter) return false;
       return true;
     });
   }, [tasks, ui.statusFilter, ui.priorityFilter]);
 
-  const selectedTask = useMemo(() => {
-    if (!ui.selectedTaskId) return null;
-    return tasks.find((t) => t.id === ui.selectedTaskId) ?? null;
-  }, [ui.selectedTaskId, tasks]);
+  const selectedTask = useMemo(() => tasks.find((t) => t.id === ui.selectedTaskId) ?? null, [tasks, ui.selectedTaskId]);
+
+  const [, updateNotification] = useUpdateNotificationMutation();
 
   function refresh() {
     if (viewAll) reexecAll({ requestPolicy: "network-only" });
     else reexecMine({ requestPolicy: "network-only" });
   }
 
-  const [, updateNotification] = useUpdateNotificationMutation();
-
   async function toggleDone(taskId: string, nextDone: boolean) {
     const nextStatus = nextDone ? NotificationStatus.Read : NotificationStatus.Unread;
 
-    const res = await updateNotification({
-      updateNotificationId: taskId,
-      status: nextStatus,
-    });
-
+    const res = await updateNotification({ updateNotificationId: taskId, status: nextStatus });
     if (res.error) {
       console.error(res.error);
       toast.error(res.error.message || "Failed to update task status");
       return;
     }
-
     refresh();
   }
 
   const openCount = tasks.filter((t) => t.status === NotificationStatus.Unread).length;
   const doneCount = tasks.filter((t) => t.status === NotificationStatus.Read).length;
+
+  if (!myEmail) {
+    return <div className="p-10 text-center text-gray-500">Loading user...</div>;
+  }
 
   return (
     <div className="p-4">
@@ -310,37 +302,37 @@ export default function TasksPage() {
           </tbody>
         </table>
       </div>
+{/* Modals */}
+<CreateTaskModal
+  open={ui.isCreateOpen}
+  onClose={() => {
+    ui.closeModals();
+    ui.clearDraft();
+  }}
+  onCreated={refresh}
+  currentUser={{ email: myEmail, name: myName, role: myRole }}
+  assignees={canViewAll ? assignees : [{ email: myEmail, name: myName, role: myRole }]}
+  hotels={hotels.map((h) => ({ id: h.id, name: h.name }))}
+  rooms={rooms.map((r) => ({ id: r.id, areaId: r.areaId, tableNumber: r.tableNumber }))}
+  defaultAssigneeEmail={myEmail}
+  draft={ui.draft as any}
+/>
 
-      {/* Modals */}
-      <CreateTaskModal
-        open={ui.isCreateOpen}
-        onClose={() => {
-          ui.closeModals();
-          ui.clearDraft();
-        }}
-        onCreated={refresh}
-        currentUser={{ email: myEmail, name: session?.user?.name ?? null, role: myRole }}
-        assignees={canViewAll ? assignees : [{ email: myEmail, name: session?.user?.name ?? null, role: myRole }]}
-        hotels={hotels.map((h) => ({ id: h.id, name: h.name }))}
-        rooms={rooms.map((r) => ({ id: r.id, areaId: r.areaId, tableNumber: r.tableNumber }))}
-        defaultAssigneeEmail={myEmail}
-        draft={ui.draft as any}
-      />
+{selectedTask && (
+  <EditTaskModal
+    open={ui.isEditOpen}
+    onClose={ui.closeModals}
+    onUpdated={refresh}
+    currentUser={{ email: myEmail, name: myName, role: myRole }}
+    canEditDetails={canViewAll}
+    notificationId={selectedTask.id}
+    assignedToEmail={selectedTask.userEmail}
+    initialMessage={selectedTask.rawMessage}
+    initialPriority={selectedTask.priority}
+    initialStatus={selectedTask.status}
+  />
+)}
 
-      {selectedTask && (
-        <EditTaskModal
-          open={ui.isEditOpen}
-          onClose={ui.closeModals}
-          onUpdated={refresh}
-          currentUser={{ email: myEmail, name: session?.user?.name ?? null, role: myRole }}
-          canEditDetails={canViewAll}
-          notificationId={selectedTask.id}
-          assignedToEmail={selectedTask.userEmail}
-          initialMessage={selectedTask.rawMessage}
-          initialPriority={selectedTask.priority}
-          initialStatus={selectedTask.status}
-        />
-      )}
 
       {selectedTask && (
         <DeleteTaskModal

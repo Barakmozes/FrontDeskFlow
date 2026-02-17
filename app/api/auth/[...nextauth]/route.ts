@@ -110,7 +110,7 @@ export const authOptions: NextAuthOptions = {
             userEmail: email,
             type: WELCOME_NOTIFICATION_TYPE,
             message:
-              "Welcome to StarManag 👋 Start by browsing the menu and placing your first order.",
+              "Welcome 👋 Start by browsing the menu and placing your first order.",
             priority: NotificationPriority.NORMAL,
             status: NotificationStatus.UNREAD,
           },
