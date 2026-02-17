@@ -124,6 +124,7 @@ export default function Header({ user }: HeaderProps) {
               >
                 FrontDeskFlow
               </Link>
+              
 
               <div className="text-xs text-gray-500">
                 {selectedHotel?.name ? (
@@ -193,7 +194,26 @@ export default function Header({ user }: HeaderProps) {
                 </span>
               </button>
             )} */}
-
+ <Link
+        href="/dashboard"
+     className="
+    inline-flex items-center justify-center gap-2
+    h-11
+    rounded-full
+    bg-slate-100/80 text-slate-700
+    px-3 sm:px-4
+    text-sm font-semibold
+    shadow-sm ring-1 ring-slate-200
+    transition
+    hover:bg-green-100 hover:text-green-700
+    active:scale-[0.98]
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2
+    whitespace-nowrap
+  "
+        aria-label="Go to Dashboard"
+      >
+        Dashboard
+      </Link>
             {user ? (
               <AccountDropDown user={user} />
             ) : (
@@ -208,6 +228,7 @@ export default function Header({ user }: HeaderProps) {
             )}
           </div>
         </div>
+        
 
         {/* Row 2: Hotel selector */}
         {canSeeHotelSelector ? (
