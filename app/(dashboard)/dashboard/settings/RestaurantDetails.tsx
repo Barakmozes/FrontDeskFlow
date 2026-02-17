@@ -18,8 +18,12 @@ import { parseHotelSettings, serializeHotelSettings } from "@/lib/hotelSettingsT
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-medium text-gray-600 mb-1">{children}</div>;
 }
+type Props = {
+  hotel: any; // עדיף לשים טיפוס מדויק
+  onSaved: () => void;
+};
 
-export default function RestaurantDetails() {
+export default function RestaurantDetails({ hotel, onSaved }: Props) {
   const [{ data, fetching, error }, refetch] = useQuery<GetAreasQuery, GetAreasQueryVariables>({
     query: GetAreasDocument,
     variables: {},
