@@ -43,7 +43,8 @@ import {
 import { useCartStore } from "@/lib/store";
 import { useHotelStore, type RoomInStore } from "@/lib/AreaStore";
 import { createOrderNumber } from "@/lib/createOrderNumber";
-import { getCurrentUser } from "@/lib/session";
+
+import { User } from "@prisma/client";
 
 /**
  * NOTE ABOUT DOMAIN MAPPING (project convention):
@@ -75,14 +76,22 @@ function getQuantity(item: any): number {
   const q = typeof item?.quantity === "number" ? item.quantity : 1;
   return Math.max(1, q);
 }
+type roomsProps = {
+  /**
+   * Keep compatibility with your old Header API.
+   * If you later move user to a Zustand store, you can pass `user={undefined}`.
+   */
+  user?: User | null;
+};
 
-export default function RoomServiceClient() {
+
+export default function RoomServiceClient({user}:roomsProps) {
   // ---------- Session (staff user) ----------
-  const { data: session, status } = useSession();
-  const staffEmail = session?.user?.email ?? "";
-  const staffName = session?.user?.name ?? session?.user?.email ?? "Front Desk";
 
-  const sessionReady = status === "authenticated";
+  const staffEmail = user?.email ?? "";
+  const staffName = user?.name ?? user?.email ?? "Front Desk";
+
+
   
   // ---------- Global stores ----------
   const { hotels, setHotels, rooms, setRooms } = useHotelStore();
